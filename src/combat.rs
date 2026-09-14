@@ -245,6 +245,9 @@ pub fn monster_ai(
             .find(|s| s.entity == target_entity)
             .expect("锁定目标必然在快照中");
 
+        // 攻击判定只看与目标的实际边缘距离，与导航路点无关
+        // （否则隔着半个地图纵坐标符号不同时，贴脸也永远无法出手）
+        let edge = edge_dist(pos, monster.radius, target.pos, target.radius);
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
         let stop_dist = monster.attack_range + monster.radius + target.radius;
         let goal = steering_goal(pos, target.pos);
@@ -252,7 +255,7 @@ pub fn monster_ai(
         to_goal.y = 0.0;
         let dist = to_goal.length();
 
-        if goal == target.pos && dist <= stop_dist + 0.05 {
+        if edge <= monster.attack_range + 0.05 {
             // 在攻击范围内：停下攻击（固定步长 tick，保证确定性）
             if timer.0.tick(TICK_DURATION).just_finished() {
                 if monster.ranged {
@@ -759,5 +762,67 @@ mod tests {
 
         let hp = world.get::<Health>(tower).unwrap();
         assert_eq!(hp.current, 1000.0 - DRAIN_PER_TICK);
+    }
+}
+
+#[cfg(test)]
+mod aggro_tests {
+    use super::*;
+
+    /// 两只敌对骑士在索敌范围内：必须互相锁定、接近并交战
+    #[test]
+    fn monsters_aggro_and_fight_each_other() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let mk = |faction: Faction| Monster {
+            faction,
+            damage: 100.0,
+            attack_range: 0.75,
+            aggro_range: 5.0,
+            speed: 3.0,
+            radius: 0.5,
+            ranged: false,
+            target: None,
+        };
+        let a = world
+            .spawn((
+                mk(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -2.0),
+            ))
+            .id();
+        let b = world
+            .spawn((
+                mk(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, 2.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+
+        // 第 1 帧：应立即互相锁定
+        schedule.run(world);
+        assert_eq!(world.get::<Monster>(a).unwrap().target, Some(b));
+        assert_eq!(world.get::<Monster>(b).unwrap().target, Some(a));
+
+        // 跑 120 帧：应接近到攻击距离并互相扣血
+        for _ in 0..120 {
+            schedule.run(world);
+        }
+        let pa = world.get::<Transform>(a).unwrap().translation;
+        let pb = world.get::<Transform>(b).unwrap().translation;
+        let gap = (pa - pb).length();
+        assert!(gap < 2.0, "两只怪没有接近：gap = {gap}");
+        let ha = world.get::<Health>(a).unwrap().current;
+        let hb = world.get::<Health>(b).unwrap().current;
+        assert!(ha < 2000.0 && hb < 2000.0, "两只怪没有互相伤害");
     }
 }
