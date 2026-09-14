@@ -221,29 +221,22 @@ pub fn monster_ai(
     for (entity, mut monster, mut transform, mut timer) in monsters.iter_mut() {
         let pos = transform.translation;
 
-        // 锁定失效（目标已不在场上或不再是敌人）→ 解除锁定
+        // 锁定失效即解除：目标消失（死亡），或已脱离攻击范围（被打断——
+        // 比如站桩输出时被新放置的怪挤开）。解除后下方立刻重新索敌，
+        // 仍在 aggro 内最近的目标会被重新锁定（可能就是挤它的那只）。
         if let Some(e) = monster.target {
-            if !snaps
+            let invalid = match snaps
                 .iter()
-                .any(|s| s.entity == e && s.faction != monster.faction)
+                .find(|s| s.entity == e && s.faction != monster.faction)
             {
-                monster.target = None;
-            }
-        }
-        // 锁定的是塔（兜底目标）时，aggro 内出现敌方怪物 → 改锁怪物
-        // 但只在"赶路"阶段允许：已在攻击塔（交战状态）的怪绝不改目标
-        // 已锁定怪物的永不切换（防抖动）
-        if let Some(e) = monster.target {
-            if let Some(locked) = snaps.iter().find(|s| s.entity == e) {
-                if locked.is_tower {
-                    let engaged = edge_dist(pos, monster.radius, locked.pos, locked.radius)
-                        <= monster.attack_range + 0.05;
-                    if !engaged {
-                        if let Some(m) = nearest_enemy_monster(&snaps, pos, &monster, entity) {
-                            monster.target = Some(m.entity);
-                        }
-                    }
+                None => true, // 目标已消失
+                Some(s) => {
+                    edge_dist(pos, monster.radius, s.pos, s.radius)
+                        > monster.attack_range + 0.05
                 }
+            };
+            if invalid {
+                monster.target = None;
             }
         }
         // 无锁定 → 索敌：aggro 内最近的敌方怪物；没有怪可打 → 最近的敌塔
@@ -980,5 +973,74 @@ mod engaged_lock_tests {
         ));
         schedule.run(world);
         assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
+    }
+}
+
+#[cfg(test)]
+mod interrupt_tests {
+    use super::*;
+
+    fn mk(faction: Faction) -> Monster {
+        Monster {
+            faction,
+            damage: 100.0,
+            attack_range: 0.75,
+            aggro_range: 5.0,
+            speed: 1.5,
+            radius: 0.5,
+            ranged: false,
+            target: None,
+        }
+    }
+
+    /// 站桩输出被挤到脱离攻击范围 = 被打断：锁定必须解除并改锁挤它的怪
+    #[test]
+    fn pushed_out_of_range_breaks_lock() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, 12.5),
+            ))
+            .id();
+        let m = world
+            .spawn((
+                mk(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, 11.3), // 贴塔，处于交战状态
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        schedule.run(world);
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
+
+        // 模拟被挤开：挪到塔的攻击范围外，同时挤它的敌怪就在 aggro 内
+        world.get_mut::<Transform>(m).unwrap().translation = Vec3::new(0.0, 1.0, 9.0);
+        let e = world
+            .spawn((
+                mk(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, 8.0),
+            ))
+            .id();
+
+        schedule.run(world);
+        // 被打断 → 改锁挤它的怪，而不是走回塔
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(e));
     }
 }
