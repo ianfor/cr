@@ -1,0 +1,6753 @@
+[
+  {
+    "slug": "knight",
+    "name": "Knight",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 834,
+        "damage": 95,
+        "dps": 79
+      },
+      "4": {
+        "hitpoints": 917,
+        "damage": 105,
+        "dps": 87
+      },
+      "5": {
+        "hitpoints": 1007,
+        "damage": 115,
+        "dps": 95
+      },
+      "6": {
+        "hitpoints": 1104,
+        "damage": 126,
+        "dps": 105
+      },
+      "7": {
+        "hitpoints": 1214,
+        "damage": 139,
+        "dps": 115
+      },
+      "8": {
+        "hitpoints": 1331,
+        "damage": 152,
+        "dps": 126
+      },
+      "9": {
+        "hitpoints": 1462,
+        "damage": 167,
+        "dps": 139
+      },
+      "10": {
+        "hitpoints": 1607,
+        "damage": 184,
+        "dps": 153
+      },
+      "11": {
+        "hitpoints": 1766,
+        "damage": 202,
+        "dps": 168
+      },
+      "12": {
+        "hitpoints": 1938,
+        "damage": 221,
+        "dps": 184
+      },
+      "13": {
+        "hitpoints": 2132,
+        "damage": 244,
+        "dps": 203
+      },
+      "14": {
+        "hitpoints": 2339,
+        "damage": 267,
+        "dps": 222
+      },
+      "15": {
+        "hitpoints": 2566,
+        "damage": 293,
+        "dps": 244
+      }
+    }
+  },
+  {
+    "slug": "archers",
+    "name": "Archers",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "0.9s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 143,
+        "damage": 48,
+        "dps": 53
+      },
+      "4": {
+        "hitpoints": 158,
+        "damage": 54,
+        "dps": 60
+      },
+      "5": {
+        "hitpoints": 173,
+        "damage": 60,
+        "dps": 66
+      },
+      "6": {
+        "hitpoints": 190,
+        "damage": 66,
+        "dps": 73
+      },
+      "7": {
+        "hitpoints": 209,
+        "damage": 73,
+        "dps": 81
+      },
+      "8": {
+        "hitpoints": 229,
+        "damage": 82,
+        "dps": 91
+      },
+      "9": {
+        "hitpoints": 252,
+        "damage": 91,
+        "dps": 101
+      },
+      "10": {
+        "hitpoints": 277,
+        "damage": 101,
+        "dps": 112
+      },
+      "11": {
+        "hitpoints": 304,
+        "damage": 112,
+        "dps": 124
+      },
+      "12": {
+        "hitpoints": 334,
+        "damage": 123,
+        "dps": 136
+      },
+      "13": {
+        "hitpoints": 367,
+        "damage": 136,
+        "dps": 151
+      },
+      "14": {
+        "hitpoints": 403,
+        "damage": 149,
+        "dps": 165
+      },
+      "15": {
+        "hitpoints": 442,
+        "damage": 164,
+        "dps": 182
+      }
+    }
+  },
+  {
+    "slug": "goblins",
+    "name": "Goblins",
+    "cost": 2,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x4",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "Melee: Short (0.5)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 95,
+        "damage": 56,
+        "dps": 50
+      },
+      "4": {
+        "hitpoints": 105,
+        "damage": 62,
+        "dps": 56
+      },
+      "5": {
+        "hitpoints": 115,
+        "damage": 68,
+        "dps": 61
+      },
+      "6": {
+        "hitpoints": 126,
+        "damage": 75,
+        "dps": 68
+      },
+      "7": {
+        "hitpoints": 139,
+        "damage": 82,
+        "dps": 74
+      },
+      "8": {
+        "hitpoints": 152,
+        "damage": 90,
+        "dps": 81
+      },
+      "9": {
+        "hitpoints": 167,
+        "damage": 99,
+        "dps": 89
+      },
+      "10": {
+        "hitpoints": 184,
+        "damage": 109,
+        "dps": 99
+      },
+      "11": {
+        "hitpoints": 202,
+        "damage": 120,
+        "dps": 109
+      },
+      "12": {
+        "hitpoints": 221,
+        "damage": 132,
+        "dps": 119
+      },
+      "13": {
+        "hitpoints": 244,
+        "damage": 145,
+        "dps": 131
+      },
+      "14": {
+        "hitpoints": 267,
+        "damage": 159,
+        "dps": 144
+      },
+      "15": {
+        "hitpoints": 293,
+        "damage": 175,
+        "dps": 159
+      }
+    }
+  },
+  {
+    "slug": "giant",
+    "name": "Giant",
+    "cost": 5,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Buildings",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 1933,
+        "damage": 119,
+        "dps": 79
+      },
+      "4": {
+        "hitpoints": 2125,
+        "damage": 131,
+        "dps": 87
+      },
+      "5": {
+        "hitpoints": 2333,
+        "damage": 144,
+        "dps": 96
+      },
+      "6": {
+        "hitpoints": 2556,
+        "damage": 158,
+        "dps": 105
+      },
+      "7": {
+        "hitpoints": 2812,
+        "damage": 174,
+        "dps": 116
+      },
+      "8": {
+        "hitpoints": 3084,
+        "damage": 191,
+        "dps": 127
+      },
+      "9": {
+        "hitpoints": 3387,
+        "damage": 209,
+        "dps": 139
+      },
+      "10": {
+        "hitpoints": 3723,
+        "damage": 230,
+        "dps": 153
+      },
+      "11": {
+        "hitpoints": 4090,
+        "damage": 253,
+        "dps": 168
+      },
+      "12": {
+        "hitpoints": 4490,
+        "damage": 278,
+        "dps": 185
+      },
+      "13": {
+        "hitpoints": 4937,
+        "damage": 305,
+        "dps": 203
+      },
+      "14": {
+        "hitpoints": 5417,
+        "damage": 335,
+        "dps": 223
+      },
+      "15": {
+        "hitpoints": 5944,
+        "damage": 368,
+        "dps": 245
+      }
+    }
+  },
+  {
+    "slug": "pekka",
+    "name": "P.E.K.K.A",
+    "cost": 7,
+    "rarity": "epic"
+  },
+  {
+    "slug": "minions",
+    "name": "Minions",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "3": {
+        "hitpoints": 108,
+        "damage": 55,
+        "dps": 49
+      },
+      "4": {
+        "hitpoints": 119,
+        "damage": 61,
+        "dps": 55
+      },
+      "5": {
+        "hitpoints": 131,
+        "damage": 67,
+        "dps": 60
+      },
+      "6": {
+        "hitpoints": 144,
+        "damage": 73,
+        "dps": 66
+      },
+      "7": {
+        "hitpoints": 158,
+        "damage": 80,
+        "dps": 72
+      },
+      "8": {
+        "hitpoints": 173,
+        "damage": 88,
+        "dps": 80
+      },
+      "9": {
+        "hitpoints": 190,
+        "damage": 97,
+        "dps": 88
+      },
+      "10": {
+        "hitpoints": 209,
+        "damage": 107,
+        "dps": 97
+      },
+      "11": {
+        "hitpoints": 230,
+        "damage": 117,
+        "dps": 106
+      },
+      "12": {
+        "hitpoints": 252,
+        "damage": 129,
+        "dps": 117
+      },
+      "13": {
+        "hitpoints": 278,
+        "damage": 142,
+        "dps": 129
+      },
+      "14": {
+        "hitpoints": 305,
+        "damage": 155,
+        "dps": 140
+      },
+      "15": {
+        "hitpoints": 334,
+        "damage": 171,
+        "dps": 155
+      }
+    }
+  },
+  {
+    "slug": "balloon",
+    "name": "Balloon",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Short (0.1)",
+    "target": "Buildings",
+    "transport": "Air",
+    "levels": {
+      "6": {
+        "hitpoints": 1049,
+        "damage": 400,
+        "dps": 200,
+        "death_damage": 150
+      },
+      "7": {
+        "hitpoints": 1154,
+        "damage": 440,
+        "dps": 220,
+        "death_damage": 165
+      },
+      "8": {
+        "hitpoints": 1266,
+        "damage": 482,
+        "dps": 241,
+        "death_damage": 181
+      },
+      "9": {
+        "hitpoints": 1390,
+        "damage": 530,
+        "dps": 265,
+        "death_damage": 199
+      },
+      "10": {
+        "hitpoints": 1528,
+        "damage": 582,
+        "dps": 291,
+        "death_damage": 219
+      },
+      "11": {
+        "hitpoints": 1679,
+        "damage": 640,
+        "dps": 320,
+        "death_damage": 240
+      },
+      "12": {
+        "hitpoints": 1843,
+        "damage": 702,
+        "dps": 351,
+        "death_damage": 264
+      },
+      "13": {
+        "hitpoints": 2027,
+        "damage": 772,
+        "dps": 386,
+        "death_damage": 290
+      },
+      "14": {
+        "hitpoints": 2223,
+        "damage": 847,
+        "dps": 423,
+        "death_damage": 318
+      },
+      "15": {
+        "hitpoints": 2440,
+        "damage": 930,
+        "dps": 465,
+        "death_damage": 349
+      }
+    }
+  },
+  {
+    "slug": "witch",
+    "name": "Witch",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 524,
+        "area_damage": 84,
+        "dps": 76
+      },
+      "7": {
+        "hitpoints": 577,
+        "area_damage": 93,
+        "dps": 84
+      },
+      "8": {
+        "hitpoints": 633,
+        "area_damage": 102,
+        "dps": 92
+      },
+      "9": {
+        "hitpoints": 695,
+        "area_damage": 112,
+        "dps": 101
+      },
+      "10": {
+        "hitpoints": 764,
+        "area_damage": 123,
+        "dps": 111
+      },
+      "11": {
+        "hitpoints": 839,
+        "area_damage": 135,
+        "dps": 122
+      },
+      "12": {
+        "hitpoints": 921,
+        "area_damage": 148,
+        "dps": 134
+      },
+      "13": {
+        "hitpoints": 1013,
+        "area_damage": 163,
+        "dps": 148
+      },
+      "14": {
+        "hitpoints": 1111,
+        "area_damage": 179,
+        "dps": 162
+      },
+      "15": {
+        "hitpoints": 1220,
+        "area_damage": 197,
+        "dps": 179
+      }
+    }
+  },
+  {
+    "slug": "barbarians",
+    "name": "Barbarians",
+    "cost": 5,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x5",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Short (0.7)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 419,
+        "damage": 120,
+        "dps": 92
+      },
+      "7": {
+        "hitpoints": 461,
+        "damage": 132,
+        "dps": 101
+      },
+      "8": {
+        "hitpoints": 505,
+        "damage": 144,
+        "dps": 110
+      },
+      "9": {
+        "hitpoints": 555,
+        "damage": 159,
+        "dps": 122
+      },
+      "10": {
+        "hitpoints": 610,
+        "damage": 174,
+        "dps": 133
+      },
+      "11": {
+        "hitpoints": 670,
+        "damage": 192,
+        "dps": 147
+      },
+      "12": {
+        "hitpoints": 736,
+        "damage": 210,
+        "dps": 161
+      },
+      "13": {
+        "hitpoints": 809,
+        "damage": 231,
+        "dps": 177
+      },
+      "14": {
+        "hitpoints": 888,
+        "damage": 254,
+        "dps": 195
+      },
+      "15": {
+        "hitpoints": 974,
+        "damage": 279,
+        "dps": 214
+      }
+    }
+  },
+  {
+    "slug": "golem",
+    "name": "Golem",
+    "cost": 8,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "2.5s",
+    "deploy_time": "3s",
+    "speed": "Slow (45)",
+    "range": "0.75",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 4240,
+        "damage": 258,
+        "dps": 103,
+        "death_damage": 186
+      },
+      "10": {
+        "hitpoints": 4660,
+        "damage": 284,
+        "dps": 113,
+        "death_damage": 205
+      },
+      "11": {
+        "hitpoints": 5120,
+        "damage": 312,
+        "dps": 124,
+        "death_damage": 225
+      },
+      "12": {
+        "hitpoints": 5620,
+        "damage": 342,
+        "dps": 136,
+        "death_damage": 247
+      },
+      "13": {
+        "hitpoints": 6180,
+        "damage": 376,
+        "dps": 150,
+        "death_damage": 271
+      },
+      "14": {
+        "hitpoints": 6780,
+        "damage": 413,
+        "dps": 165,
+        "death_damage": 298
+      }
+    }
+  },
+  {
+    "slug": "skeletons",
+    "name": "Skeletons",
+    "cost": 1,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Short (0.5)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 51,
+        "damage": 51,
+        "dps": 51
+      },
+      "7": {
+        "hitpoints": 56,
+        "damage": 56,
+        "dps": 56
+      },
+      "8": {
+        "hitpoints": 61,
+        "damage": 61,
+        "dps": 61
+      },
+      "9": {
+        "hitpoints": 67,
+        "damage": 67,
+        "dps": 67
+      },
+      "10": {
+        "hitpoints": 74,
+        "damage": 74,
+        "dps": 74
+      },
+      "11": {
+        "hitpoints": 81,
+        "damage": 81,
+        "dps": 81
+      },
+      "12": {
+        "hitpoints": 89,
+        "damage": 89,
+        "dps": 89
+      },
+      "13": {
+        "hitpoints": 98,
+        "damage": 98,
+        "dps": 98
+      },
+      "14": {
+        "hitpoints": 108,
+        "damage": 108,
+        "dps": 108
+      },
+      "15": {
+        "hitpoints": 119,
+        "damage": 119,
+        "dps": 119
+      }
+    }
+  },
+  {
+    "slug": "valkyrie",
+    "name": "Valkyrie",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 901,
+        "area_damage": 125,
+        "dps": 83
+      },
+      "4": {
+        "hitpoints": 990,
+        "area_damage": 138,
+        "dps": 92
+      },
+      "5": {
+        "hitpoints": 1087,
+        "area_damage": 151,
+        "dps": 100
+      },
+      "6": {
+        "hitpoints": 1192,
+        "area_damage": 166,
+        "dps": 110
+      },
+      "7": {
+        "hitpoints": 1311,
+        "area_damage": 183,
+        "dps": 122
+      },
+      "8": {
+        "hitpoints": 1437,
+        "area_damage": 200,
+        "dps": 133
+      },
+      "9": {
+        "hitpoints": 1579,
+        "area_damage": 220,
+        "dps": 146
+      },
+      "10": {
+        "hitpoints": 1735,
+        "area_damage": 242,
+        "dps": 161
+      },
+      "11": {
+        "hitpoints": 1907,
+        "area_damage": 266,
+        "dps": 177
+      },
+      "12": {
+        "hitpoints": 2093,
+        "area_damage": 292,
+        "dps": 194
+      },
+      "13": {
+        "hitpoints": 2302,
+        "area_damage": 321,
+        "dps": 214
+      },
+      "14": {
+        "hitpoints": 2525,
+        "area_damage": 352,
+        "dps": 234
+      },
+      "15": {
+        "hitpoints": 2771,
+        "area_damage": 386,
+        "dps": 257
+      }
+    }
+  },
+  {
+    "slug": "skeleton_army",
+    "name": "Skeleton Army",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x15",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Short (0.5)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 51,
+        "damage": 51,
+        "dps": 46
+      },
+      "7": {
+        "hitpoints": 56,
+        "damage": 56,
+        "dps": 50
+      },
+      "8": {
+        "hitpoints": 61,
+        "damage": 61,
+        "dps": 55
+      },
+      "9": {
+        "hitpoints": 67,
+        "damage": 67,
+        "dps": 60
+      },
+      "10": {
+        "hitpoints": 74,
+        "damage": 74,
+        "dps": 67
+      },
+      "11": {
+        "hitpoints": 81,
+        "damage": 81,
+        "dps": 73
+      },
+      "12": {
+        "hitpoints": 89,
+        "damage": 89,
+        "dps": 80
+      },
+      "13": {
+        "hitpoints": 98,
+        "damage": 98,
+        "dps": 89
+      },
+      "14": {
+        "hitpoints": 108,
+        "damage": 108,
+        "dps": 98
+      },
+      "15": {
+        "hitpoints": 119,
+        "damage": 119,
+        "dps": 108
+      }
+    }
+  },
+  {
+    "slug": "bomber",
+    "name": "Bomber",
+    "cost": 2,
+    "rarity": "common",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.8s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "4.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 143,
+        "area_damage": 106,
+        "dps": 58
+      },
+      "4": {
+        "hitpoints": 158,
+        "area_damage": 117,
+        "dps": 65
+      },
+      "5": {
+        "hitpoints": 173,
+        "area_damage": 128,
+        "dps": 71
+      },
+      "6": {
+        "hitpoints": 190,
+        "area_damage": 140,
+        "dps": 77
+      },
+      "7": {
+        "hitpoints": 209,
+        "area_damage": 154,
+        "dps": 85
+      },
+      "8": {
+        "hitpoints": 229,
+        "area_damage": 169,
+        "dps": 93
+      },
+      "9": {
+        "hitpoints": 252,
+        "area_damage": 186,
+        "dps": 103
+      },
+      "10": {
+        "hitpoints": 277,
+        "area_damage": 205,
+        "dps": 113
+      },
+      "11": {
+        "hitpoints": 304,
+        "area_damage": 225,
+        "dps": 125
+      },
+      "12": {
+        "hitpoints": 334,
+        "area_damage": 247,
+        "dps": 137
+      },
+      "13": {
+        "hitpoints": 367,
+        "area_damage": 271,
+        "dps": 150
+      },
+      "14": {
+        "hitpoints": 403,
+        "area_damage": 298,
+        "dps": 165
+      }
+    }
+  },
+  {
+    "slug": "musketeer",
+    "name": "Musketeer",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 341,
+        "damage": 102,
+        "dps": 102
+      },
+      "4": {
+        "hitpoints": 375,
+        "damage": 113,
+        "dps": 113
+      },
+      "5": {
+        "hitpoints": 411,
+        "damage": 124,
+        "dps": 124
+      },
+      "6": {
+        "hitpoints": 451,
+        "damage": 136,
+        "dps": 136
+      },
+      "7": {
+        "hitpoints": 496,
+        "damage": 149,
+        "dps": 149
+      },
+      "8": {
+        "hitpoints": 544,
+        "damage": 164,
+        "dps": 164
+      },
+      "9": {
+        "hitpoints": 597,
+        "damage": 180,
+        "dps": 180
+      },
+      "10": {
+        "hitpoints": 657,
+        "damage": 198,
+        "dps": 198
+      },
+      "11": {
+        "hitpoints": 721,
+        "damage": 217,
+        "dps": 217
+      },
+      "12": {
+        "hitpoints": 792,
+        "damage": 238,
+        "dps": 238
+      },
+      "13": {
+        "hitpoints": 871,
+        "damage": 262,
+        "dps": 262
+      },
+      "14": {
+        "hitpoints": 955,
+        "damage": 288,
+        "dps": 288
+      },
+      "15": {
+        "hitpoints": 1049,
+        "damage": 316,
+        "dps": 316
+      }
+    }
+  },
+  {
+    "slug": "baby_dragon",
+    "name": "Baby Dragon",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "3.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "6": {
+        "hitpoints": 720,
+        "area_damage": 100,
+        "dps": 66
+      },
+      "7": {
+        "hitpoints": 792,
+        "area_damage": 110,
+        "dps": 73
+      },
+      "8": {
+        "hitpoints": 868,
+        "area_damage": 121,
+        "dps": 80
+      },
+      "9": {
+        "hitpoints": 954,
+        "area_damage": 133,
+        "dps": 88
+      },
+      "10": {
+        "hitpoints": 1048,
+        "area_damage": 146,
+        "dps": 97
+      },
+      "11": {
+        "hitpoints": 1152,
+        "area_damage": 161,
+        "dps": 107
+      },
+      "12": {
+        "hitpoints": 1264,
+        "area_damage": 177,
+        "dps": 118
+      },
+      "13": {
+        "hitpoints": 1390,
+        "area_damage": 194,
+        "dps": 129
+      },
+      "14": {
+        "hitpoints": 1525,
+        "area_damage": 213,
+        "dps": 142
+      },
+      "15": {
+        "hitpoints": 1674,
+        "area_damage": 234,
+        "dps": 156
+      }
+    }
+  },
+  {
+    "slug": "prince",
+    "name": "Prince",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Long (1.6)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 1200,
+        "damage": 244,
+        "dps": 174
+      },
+      "7": {
+        "hitpoints": 1320,
+        "damage": 269,
+        "dps": 192
+      },
+      "8": {
+        "hitpoints": 1447,
+        "damage": 295,
+        "dps": 210
+      },
+      "9": {
+        "hitpoints": 1590,
+        "damage": 324,
+        "dps": 231
+      },
+      "10": {
+        "hitpoints": 1747,
+        "damage": 356,
+        "dps": 254
+      },
+      "11": {
+        "hitpoints": 1920,
+        "damage": 391,
+        "dps": 279
+      },
+      "12": {
+        "hitpoints": 2107,
+        "damage": 429,
+        "dps": 306
+      },
+      "13": {
+        "hitpoints": 2317,
+        "damage": 472,
+        "dps": 337
+      },
+      "14": {
+        "hitpoints": 2542,
+        "damage": 518,
+        "dps": 370
+      },
+      "15": {
+        "hitpoints": 2790,
+        "damage": 569,
+        "dps": 406
+      }
+    }
+  },
+  {
+    "slug": "wizard",
+    "name": "Wizard",
+    "cost": 5,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 472,
+        "area_damage": 176,
+        "dps": 125
+      },
+      "7": {
+        "hitpoints": 519,
+        "area_damage": 193,
+        "dps": 137
+      },
+      "8": {
+        "hitpoints": 569,
+        "area_damage": 212,
+        "dps": 151
+      },
+      "9": {
+        "hitpoints": 625,
+        "area_damage": 233,
+        "dps": 166
+      },
+      "10": {
+        "hitpoints": 687,
+        "area_damage": 256,
+        "dps": 182
+      },
+      "11": {
+        "hitpoints": 755,
+        "area_damage": 281,
+        "dps": 200
+      },
+      "12": {
+        "hitpoints": 828,
+        "area_damage": 309,
+        "dps": 220
+      },
+      "13": {
+        "hitpoints": 911,
+        "area_damage": 339,
+        "dps": 242
+      },
+      "14": {
+        "hitpoints": 1000,
+        "area_damage": 372,
+        "dps": 265
+      }
+    }
+  },
+  {
+    "slug": "mini_pekka",
+    "name": "Mini P.E.K.K.A",
+    "cost": 4,
+    "rarity": "rare"
+  },
+  {
+    "slug": "spear_goblins",
+    "name": "Spear Goblins",
+    "cost": 2,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1.7s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 83,
+        "damage": 51,
+        "dps": 30
+      },
+      "7": {
+        "hitpoints": 91,
+        "damage": 56,
+        "dps": 32
+      },
+      "8": {
+        "hitpoints": 100,
+        "damage": 61,
+        "dps": 35
+      },
+      "9": {
+        "hitpoints": 110,
+        "damage": 67,
+        "dps": 39
+      },
+      "10": {
+        "hitpoints": 121,
+        "damage": 74,
+        "dps": 43
+      },
+      "11": {
+        "hitpoints": 133,
+        "damage": 81,
+        "dps": 47
+      },
+      "12": {
+        "hitpoints": 146,
+        "damage": 89,
+        "dps": 52
+      },
+      "13": {
+        "hitpoints": 160,
+        "damage": 98,
+        "dps": 57
+      },
+      "14": {
+        "hitpoints": 176,
+        "damage": 108,
+        "dps": 63
+      },
+      "15": {
+        "hitpoints": 193,
+        "damage": 119,
+        "dps": 70
+      }
+    }
+  },
+  {
+    "slug": "giant_skeleton",
+    "name": "Giant Skeleton",
+    "cost": 6,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Short (0.8)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 2260,
+        "damage": 166,
+        "dps": 118,
+        "death_damage": 334
+      },
+      "7": {
+        "hitpoints": 2486,
+        "damage": 183,
+        "dps": 130,
+        "death_damage": 367
+      },
+      "8": {
+        "hitpoints": 2727,
+        "damage": 200,
+        "dps": 142,
+        "death_damage": 404
+      },
+      "9": {
+        "hitpoints": 2995,
+        "damage": 220,
+        "dps": 157,
+        "death_damage": 443
+      },
+      "10": {
+        "hitpoints": 3292,
+        "damage": 242,
+        "dps": 172,
+        "death_damage": 486
+      },
+      "11": {
+        "hitpoints": 3617,
+        "damage": 266,
+        "dps": 190,
+        "death_damage": 535
+      },
+      "12": {
+        "hitpoints": 3970,
+        "damage": 292,
+        "dps": 208,
+        "death_damage": 587
+      },
+      "13": {
+        "hitpoints": 4366,
+        "damage": 321,
+        "dps": 229,
+        "death_damage": 645
+      },
+      "14": {
+        "hitpoints": 4790,
+        "damage": 352,
+        "dps": 251,
+        "death_damage": 708
+      },
+      "15": {
+        "hitpoints": 5256,
+        "damage": 386,
+        "dps": 275,
+        "death_damage": 777
+      }
+    }
+  },
+  {
+    "slug": "hog_rider",
+    "name": "Hog Rider",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.6s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "Melee: Short (0.8)",
+    "target": "Buildings",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 802,
+        "damage": 150,
+        "dps": 93
+      },
+      "4": {
+        "hitpoints": 881,
+        "damage": 164,
+        "dps": 102
+      },
+      "5": {
+        "hitpoints": 967,
+        "damage": 181,
+        "dps": 113
+      },
+      "6": {
+        "hitpoints": 1060,
+        "damage": 198,
+        "dps": 123
+      },
+      "7": {
+        "hitpoints": 1166,
+        "damage": 218,
+        "dps": 136
+      },
+      "8": {
+        "hitpoints": 1279,
+        "damage": 239,
+        "dps": 149
+      },
+      "9": {
+        "hitpoints": 1405,
+        "damage": 262,
+        "dps": 163
+      },
+      "10": {
+        "hitpoints": 1544,
+        "damage": 288,
+        "dps": 180
+      },
+      "11": {
+        "hitpoints": 1697,
+        "damage": 317,
+        "dps": 198
+      },
+      "12": {
+        "hitpoints": 1863,
+        "damage": 348,
+        "dps": 217
+      },
+      "13": {
+        "hitpoints": 2048,
+        "damage": 383,
+        "dps": 239
+      },
+      "14": {
+        "hitpoints": 2247,
+        "damage": 420,
+        "dps": 262
+      },
+      "15": {
+        "hitpoints": 2466,
+        "damage": 461,
+        "dps": 288
+      }
+    }
+  },
+  {
+    "slug": "minion_horde",
+    "name": "Minion Horde",
+    "cost": 5,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x6",
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "3": {
+        "hitpoints": 108,
+        "damage": 55,
+        "dps": 55
+      },
+      "4": {
+        "hitpoints": 119,
+        "damage": 61,
+        "dps": 61
+      },
+      "5": {
+        "hitpoints": 131,
+        "damage": 67,
+        "dps": 67
+      },
+      "6": {
+        "hitpoints": 144,
+        "damage": 73,
+        "dps": 73
+      },
+      "7": {
+        "hitpoints": 158,
+        "damage": 80,
+        "dps": 80
+      },
+      "8": {
+        "hitpoints": 173,
+        "damage": 88,
+        "dps": 88
+      },
+      "9": {
+        "hitpoints": 190,
+        "damage": 97,
+        "dps": 97
+      },
+      "10": {
+        "hitpoints": 209,
+        "damage": 107,
+        "dps": 107
+      },
+      "11": {
+        "hitpoints": 230,
+        "damage": 117,
+        "dps": 117
+      },
+      "12": {
+        "hitpoints": 252,
+        "damage": 129,
+        "dps": 129
+      },
+      "13": {
+        "hitpoints": 278,
+        "damage": 142,
+        "dps": 142
+      },
+      "14": {
+        "hitpoints": 305,
+        "damage": 155,
+        "dps": 155
+      }
+    }
+  },
+  {
+    "slug": "ice_wizard",
+    "name": "Ice Wizard",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.7s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 570,
+        "area_damage": 74,
+        "dps": 43
+      },
+      "10": {
+        "hitpoints": 626,
+        "area_damage": 81,
+        "dps": 47
+      },
+      "11": {
+        "hitpoints": 688,
+        "area_damage": 89,
+        "dps": 52
+      },
+      "12": {
+        "hitpoints": 755,
+        "area_damage": 98,
+        "dps": 57
+      },
+      "13": {
+        "hitpoints": 831,
+        "area_damage": 108,
+        "dps": 63
+      },
+      "14": {
+        "hitpoints": 911,
+        "area_damage": 118,
+        "dps": 69
+      }
+    }
+  },
+  {
+    "slug": "royal_giant",
+    "name": "Royal Giant",
+    "cost": 6,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.7s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "5",
+    "target": "Buildings",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 1977,
+        "damage": 192,
+        "dps": 112
+      },
+      "7": {
+        "hitpoints": 2175,
+        "damage": 211,
+        "dps": 124
+      },
+      "8": {
+        "hitpoints": 2385,
+        "damage": 231,
+        "dps": 135
+      },
+      "9": {
+        "hitpoints": 2620,
+        "damage": 254,
+        "dps": 149
+      },
+      "10": {
+        "hitpoints": 2879,
+        "damage": 279,
+        "dps": 164
+      },
+      "11": {
+        "hitpoints": 3164,
+        "damage": 307,
+        "dps": 180
+      },
+      "12": {
+        "hitpoints": 3473,
+        "damage": 337,
+        "dps": 198
+      },
+      "13": {
+        "hitpoints": 3819,
+        "damage": 370,
+        "dps": 217
+      },
+      "14": {
+        "hitpoints": 4190,
+        "damage": 406,
+        "dps": 238
+      },
+      "15": {
+        "hitpoints": 4597,
+        "damage": 446,
+        "dps": 262
+      }
+    }
+  },
+  {
+    "slug": "guards",
+    "name": "Guards",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Long (1.6)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 51,
+        "damage": 73,
+        "dps": 73
+      },
+      "7": {
+        "hitpoints": 56,
+        "damage": 80,
+        "dps": 80
+      },
+      "8": {
+        "hitpoints": 61,
+        "damage": 88,
+        "dps": 88
+      },
+      "9": {
+        "hitpoints": 67,
+        "damage": 97,
+        "dps": 97
+      },
+      "10": {
+        "hitpoints": 74,
+        "damage": 107,
+        "dps": 107
+      },
+      "11": {
+        "hitpoints": 81,
+        "damage": 117,
+        "dps": 117
+      },
+      "12": {
+        "hitpoints": 89,
+        "damage": 129,
+        "dps": 129
+      },
+      "13": {
+        "hitpoints": 98,
+        "damage": 142,
+        "dps": 142
+      },
+      "14": {
+        "hitpoints": 108,
+        "damage": 155,
+        "dps": 155
+      },
+      "15": {
+        "hitpoints": 119,
+        "damage": 171,
+        "dps": 171
+      }
+    }
+  },
+  {
+    "slug": "princess",
+    "name": "Princess",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "3s",
+    "deploy_time": "1.2s",
+    "speed": "Medium (60)",
+    "range": "9",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 216,
+        "area_damage": 139,
+        "dps": 46
+      },
+      "10": {
+        "hitpoints": 237,
+        "area_damage": 153,
+        "dps": 51
+      },
+      "11": {
+        "hitpoints": 261,
+        "area_damage": 168,
+        "dps": 56
+      },
+      "12": {
+        "hitpoints": 286,
+        "area_damage": 185,
+        "dps": 61
+      },
+      "13": {
+        "hitpoints": 315,
+        "area_damage": 203,
+        "dps": 67
+      },
+      "14": {
+        "hitpoints": 345,
+        "area_damage": 223,
+        "dps": 74
+      }
+    }
+  },
+  {
+    "slug": "dark_prince",
+    "name": "Dark Prince",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 750,
+        "area_damage": 166,
+        "dps": 127
+      },
+      "7": {
+        "hitpoints": 825,
+        "area_damage": 183,
+        "dps": 140
+      },
+      "8": {
+        "hitpoints": 905,
+        "area_damage": 201,
+        "dps": 154
+      },
+      "9": {
+        "hitpoints": 994,
+        "area_damage": 221,
+        "dps": 170
+      },
+      "10": {
+        "hitpoints": 1092,
+        "area_damage": 243,
+        "dps": 186
+      },
+      "11": {
+        "hitpoints": 1200,
+        "area_damage": 266,
+        "dps": 204
+      },
+      "12": {
+        "hitpoints": 1317,
+        "area_damage": 293,
+        "dps": 225
+      },
+      "13": {
+        "hitpoints": 1449,
+        "area_damage": 321,
+        "dps": 246
+      },
+      "14": {
+        "hitpoints": 1589,
+        "area_damage": 352,
+        "dps": 270
+      },
+      "15": {
+        "hitpoints": 1744,
+        "area_damage": 387,
+        "dps": 297
+      }
+    }
+  },
+  {
+    "slug": "three_musketeers",
+    "name": "Three Musketeers",
+    "cost": 9,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 451,
+        "damage": 136,
+        "dps": 136
+      },
+      "7": {
+        "hitpoints": 496,
+        "damage": 149,
+        "dps": 149
+      },
+      "8": {
+        "hitpoints": 544,
+        "damage": 164,
+        "dps": 164
+      },
+      "9": {
+        "hitpoints": 597,
+        "damage": 180,
+        "dps": 180
+      },
+      "10": {
+        "hitpoints": 657,
+        "damage": 198,
+        "dps": 198
+      },
+      "11": {
+        "hitpoints": 721,
+        "damage": 217,
+        "dps": 217
+      },
+      "12": {
+        "hitpoints": 792,
+        "damage": 238,
+        "dps": 238
+      },
+      "13": {
+        "hitpoints": 871,
+        "damage": 262,
+        "dps": 262
+      },
+      "14": {
+        "hitpoints": 955,
+        "damage": 288,
+        "dps": 288
+      }
+    }
+  },
+  {
+    "slug": "lava_hound",
+    "name": "Lava Hound",
+    "cost": 7,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "3.5",
+    "target": "Buildings",
+    "transport": "Air",
+    "levels": {
+      "9": {
+        "hitpoints": 2965,
+        "damage": 44,
+        "dps": 33
+      },
+      "10": {
+        "hitpoints": 3259,
+        "damage": 48,
+        "dps": 36
+      },
+      "11": {
+        "hitpoints": 3581,
+        "damage": 53,
+        "dps": 40
+      },
+      "12": {
+        "hitpoints": 3931,
+        "damage": 59,
+        "dps": 45
+      },
+      "13": {
+        "hitpoints": 4322,
+        "damage": 64,
+        "dps": 50
+      },
+      "14": {
+        "hitpoints": 4742,
+        "damage": 71,
+        "dps": 54
+      }
+    }
+  },
+  {
+    "slug": "ice_spirit",
+    "name": "Ice Spirit",
+    "cost": 1,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 144,
+        "area_damage": 68
+      },
+      "7": {
+        "hitpoints": 158,
+        "area_damage": 75
+      },
+      "8": {
+        "hitpoints": 173,
+        "area_damage": 82
+      },
+      "9": {
+        "hitpoints": 190,
+        "area_damage": 91
+      },
+      "10": {
+        "hitpoints": 209,
+        "area_damage": 100
+      },
+      "11": {
+        "hitpoints": 230,
+        "area_damage": 110
+      },
+      "12": {
+        "hitpoints": 252,
+        "area_damage": 120
+      },
+      "13": {
+        "hitpoints": 278,
+        "area_damage": 132
+      },
+      "14": {
+        "hitpoints": 305,
+        "area_damage": 145
+      },
+      "15": {
+        "hitpoints": 334,
+        "area_damage": 159
+      }
+    }
+  },
+  {
+    "slug": "fire_spirit",
+    "name": "Fire Spirit",
+    "cost": 1,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 144,
+        "area_damage": 129
+      },
+      "7": {
+        "hitpoints": 158,
+        "area_damage": 142
+      },
+      "8": {
+        "hitpoints": 173,
+        "area_damage": 156
+      },
+      "9": {
+        "hitpoints": 190,
+        "area_damage": 171
+      },
+      "10": {
+        "hitpoints": 209,
+        "area_damage": 188
+      },
+      "11": {
+        "hitpoints": 230,
+        "area_damage": 207
+      },
+      "12": {
+        "hitpoints": 252,
+        "area_damage": 227
+      },
+      "13": {
+        "hitpoints": 278,
+        "area_damage": 250
+      },
+      "14": {
+        "hitpoints": 305,
+        "area_damage": 274
+      },
+      "15": {
+        "hitpoints": 334,
+        "area_damage": 301
+      }
+    }
+  },
+  {
+    "slug": "miner",
+    "name": "Miner",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1002,
+        "damage": 161,
+        "dps": 123
+      },
+      "10": {
+        "hitpoints": 1102,
+        "damage": 177,
+        "dps": 136
+      },
+      "11": {
+        "hitpoints": 1210,
+        "damage": 194,
+        "dps": 149
+      },
+      "12": {
+        "hitpoints": 1329,
+        "damage": 213,
+        "dps": 163
+      },
+      "13": {
+        "hitpoints": 1461,
+        "damage": 234,
+        "dps": 180
+      },
+      "14": {
+        "hitpoints": 1603,
+        "damage": 257,
+        "dps": 197
+      }
+    }
+  },
+  {
+    "slug": "sparky",
+    "name": "Sparky",
+    "cost": 6,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "4s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1202,
+        "area_damage": 1102,
+        "dps": 275
+      },
+      "10": {
+        "hitpoints": 1321,
+        "area_damage": 1211,
+        "dps": 302
+      },
+      "11": {
+        "hitpoints": 1451,
+        "area_damage": 1331,
+        "dps": 332
+      },
+      "12": {
+        "hitpoints": 1593,
+        "area_damage": 1461,
+        "dps": 365
+      },
+      "13": {
+        "hitpoints": 1752,
+        "area_damage": 1606,
+        "dps": 401
+      },
+      "14": {
+        "hitpoints": 1922,
+        "area_damage": 1762,
+        "dps": 440
+      }
+    }
+  },
+  {
+    "slug": "bowler",
+    "name": "Bowler",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "2.5s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "4",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 1300,
+        "area_damage": 180,
+        "dps": 72
+      },
+      "7": {
+        "hitpoints": 1430,
+        "area_damage": 198,
+        "dps": 79
+      },
+      "8": {
+        "hitpoints": 1569,
+        "area_damage": 218,
+        "dps": 87
+      },
+      "9": {
+        "hitpoints": 1723,
+        "area_damage": 239,
+        "dps": 95
+      },
+      "10": {
+        "hitpoints": 1894,
+        "area_damage": 263,
+        "dps": 105
+      },
+      "11": {
+        "hitpoints": 2081,
+        "area_damage": 289,
+        "dps": 115
+      },
+      "12": {
+        "hitpoints": 2284,
+        "area_damage": 317,
+        "dps": 126
+      },
+      "13": {
+        "hitpoints": 2512,
+        "area_damage": 349,
+        "dps": 139
+      },
+      "14": {
+        "hitpoints": 2756,
+        "area_damage": 383,
+        "dps": 153
+      },
+      "15": {
+        "hitpoints": 3024,
+        "area_damage": 420,
+        "dps": 168
+      }
+    }
+  },
+  {
+    "slug": "lumberjack",
+    "name": "Lumberjack",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.8s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "0.7",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1060,
+        "damage": 212,
+        "dps": 265
+      },
+      "10": {
+        "hitpoints": 1166,
+        "damage": 233,
+        "dps": 291
+      },
+      "11": {
+        "hitpoints": 1282,
+        "damage": 256,
+        "dps": 320
+      },
+      "12": {
+        "hitpoints": 1409,
+        "damage": 281,
+        "dps": 351
+      },
+      "13": {
+        "hitpoints": 1547,
+        "damage": 309,
+        "dps": 386
+      },
+      "14": {
+        "hitpoints": 1696,
+        "damage": 339,
+        "dps": 423
+      }
+    }
+  },
+  {
+    "slug": "battle_ram",
+    "name": "Battle Ram",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "0.5",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 604,
+        "damage": 179,
+        "dps": 137
+      },
+      "7": {
+        "hitpoints": 665,
+        "damage": 197,
+        "dps": 151
+      },
+      "8": {
+        "hitpoints": 729,
+        "damage": 216,
+        "dps": 166
+      },
+      "9": {
+        "hitpoints": 801,
+        "damage": 237,
+        "dps": 182
+      },
+      "10": {
+        "hitpoints": 880,
+        "damage": 260,
+        "dps": 200
+      },
+      "11": {
+        "hitpoints": 967,
+        "damage": 286,
+        "dps": 220
+      },
+      "12": {
+        "hitpoints": 1062,
+        "damage": 314,
+        "dps": 241
+      },
+      "13": {
+        "hitpoints": 1168,
+        "damage": 346,
+        "dps": 266
+      },
+      "14": {
+        "hitpoints": 1281,
+        "damage": 379,
+        "dps": 291
+      }
+    }
+  },
+  {
+    "slug": "inferno_dragon",
+    "name": "Inferno Dragon",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "3.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "9": {
+        "hitpoints": 1072,
+        "damage": 29,
+        "dps": 72
+      },
+      "10": {
+        "hitpoints": 1178,
+        "damage": 32,
+        "dps": 80
+      },
+      "11": {
+        "hitpoints": 1295,
+        "damage": 35,
+        "dps": 87
+      },
+      "12": {
+        "hitpoints": 1421,
+        "damage": 39,
+        "dps": 97
+      },
+      "13": {
+        "hitpoints": 1563,
+        "damage": 43,
+        "dps": 107
+      },
+      "14": {
+        "hitpoints": 1715,
+        "damage": 47,
+        "dps": 117
+      }
+    }
+  },
+  {
+    "slug": "ice_golem",
+    "name": "Ice Golem",
+    "cost": 2,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "2.5s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "0.75",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 748,
+        "damage": 52,
+        "dps": 20,
+        "death_damage": 52
+      },
+      "7": {
+        "hitpoints": 823,
+        "damage": 58,
+        "dps": 23,
+        "death_damage": 58
+      },
+      "8": {
+        "hitpoints": 903,
+        "damage": 63,
+        "dps": 25,
+        "death_damage": 63
+      },
+      "9": {
+        "hitpoints": 992,
+        "damage": 69,
+        "dps": 27,
+        "death_damage": 69
+      },
+      "10": {
+        "hitpoints": 1090,
+        "damage": 76,
+        "dps": 30,
+        "death_damage": 76
+      },
+      "11": {
+        "hitpoints": 1198,
+        "damage": 84,
+        "dps": 33,
+        "death_damage": 84
+      },
+      "12": {
+        "hitpoints": 1315,
+        "damage": 92,
+        "dps": 36,
+        "death_damage": 92
+      },
+      "13": {
+        "hitpoints": 1446,
+        "damage": 101,
+        "dps": 40,
+        "death_damage": 101
+      },
+      "14": {
+        "hitpoints": 1586,
+        "damage": 111,
+        "dps": 44,
+        "death_damage": 111
+      }
+    }
+  },
+  {
+    "slug": "mega_minion",
+    "name": "Mega Minion",
+    "cost": 3,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Long (1.6)",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "3": {
+        "hitpoints": 395,
+        "damage": 147,
+        "dps": 98
+      },
+      "4": {
+        "hitpoints": 434,
+        "damage": 162,
+        "dps": 108
+      },
+      "5": {
+        "hitpoints": 477,
+        "damage": 178,
+        "dps": 118
+      },
+      "6": {
+        "hitpoints": 523,
+        "damage": 195,
+        "dps": 130
+      },
+      "7": {
+        "hitpoints": 575,
+        "damage": 214,
+        "dps": 142
+      },
+      "8": {
+        "hitpoints": 631,
+        "damage": 235,
+        "dps": 156
+      },
+      "9": {
+        "hitpoints": 693,
+        "damage": 258,
+        "dps": 172
+      },
+      "10": {
+        "hitpoints": 761,
+        "damage": 284,
+        "dps": 189
+      },
+      "11": {
+        "hitpoints": 837,
+        "damage": 312,
+        "dps": 208
+      },
+      "12": {
+        "hitpoints": 918,
+        "damage": 342,
+        "dps": 228
+      },
+      "13": {
+        "hitpoints": 1010,
+        "damage": 376,
+        "dps": 250
+      },
+      "14": {
+        "hitpoints": 1108,
+        "damage": 413,
+        "dps": 275
+      },
+      "15": {
+        "hitpoints": 1216,
+        "damage": 453,
+        "dps": 302
+      }
+    }
+  },
+  {
+    "slug": "dart_goblin",
+    "name": "Dart Goblin",
+    "cost": 3,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.8s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "6.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 163,
+        "damage": 92,
+        "dps": 115
+      },
+      "7": {
+        "hitpoints": 179,
+        "damage": 102,
+        "dps": 127
+      },
+      "8": {
+        "hitpoints": 196,
+        "damage": 114,
+        "dps": 142
+      },
+      "9": {
+        "hitpoints": 216,
+        "damage": 126,
+        "dps": 157
+      },
+      "10": {
+        "hitpoints": 237,
+        "damage": 140,
+        "dps": 175
+      },
+      "11": {
+        "hitpoints": 261,
+        "damage": 156,
+        "dps": 195
+      },
+      "12": {
+        "hitpoints": 286,
+        "damage": 172,
+        "dps": 215
+      },
+      "13": {
+        "hitpoints": 315,
+        "damage": 189,
+        "dps": 236
+      },
+      "14": {
+        "hitpoints": 345,
+        "damage": 208,
+        "dps": 260
+      }
+    }
+  },
+  {
+    "slug": "goblin_gang",
+    "name": "Goblin Gang",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x6",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": null,
+    "target": "Ground (Goblins) / Air &amp; Ground (Spear Goblins)",
+    "transport": "Ground",
+    "levels": {}
+  },
+  {
+    "slug": "electro_wizard",
+    "name": "Electro Wizard",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.8s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 591,
+        "damage": 95,
+        "dps": 105
+      },
+      "10": {
+        "hitpoints": 650,
+        "damage": 104,
+        "dps": 115
+      },
+      "11": {
+        "hitpoints": 714,
+        "damage": 115,
+        "dps": 127
+      },
+      "12": {
+        "hitpoints": 783,
+        "damage": 126,
+        "dps": 140
+      },
+      "13": {
+        "hitpoints": 862,
+        "damage": 139,
+        "dps": 154
+      },
+      "14": {
+        "hitpoints": 945,
+        "damage": 152,
+        "dps": 168
+      }
+    }
+  },
+  {
+    "slug": "elite_barbarians",
+    "name": "Elite Barbarians",
+    "cost": 6,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.4s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 838,
+        "damage": 240,
+        "dps": 171
+      },
+      "7": {
+        "hitpoints": 922,
+        "damage": 264,
+        "dps": 188
+      },
+      "8": {
+        "hitpoints": 1011,
+        "damage": 289,
+        "dps": 206
+      },
+      "9": {
+        "hitpoints": 1110,
+        "damage": 318,
+        "dps": 227
+      },
+      "10": {
+        "hitpoints": 1220,
+        "damage": 349,
+        "dps": 249
+      },
+      "11": {
+        "hitpoints": 1341,
+        "damage": 384,
+        "dps": 274
+      },
+      "12": {
+        "hitpoints": 1472,
+        "damage": 421,
+        "dps": 300
+      },
+      "13": {
+        "hitpoints": 1619,
+        "damage": 463,
+        "dps": 330
+      },
+      "14": {
+        "hitpoints": 1776,
+        "damage": 508,
+        "dps": 362
+      },
+      "15": {
+        "hitpoints": 1949,
+        "damage": 558,
+        "dps": 398
+      }
+    }
+  },
+  {
+    "slug": "hunter",
+    "name": "Hunter",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "2.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "4",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 553,
+        "damage": 520,
+        "dps": 236
+      },
+      "7": {
+        "hitpoints": 608,
+        "damage": 580,
+        "dps": 263
+      },
+      "8": {
+        "hitpoints": 667,
+        "damage": 630,
+        "dps": 286
+      },
+      "9": {
+        "hitpoints": 733,
+        "damage": 690,
+        "dps": 313
+      },
+      "10": {
+        "hitpoints": 806,
+        "damage": 760,
+        "dps": 345
+      },
+      "11": {
+        "hitpoints": 885,
+        "damage": 840,
+        "dps": 381
+      },
+      "12": {
+        "hitpoints": 972,
+        "damage": 920,
+        "dps": 418
+      },
+      "13": {
+        "hitpoints": 1069,
+        "damage": 1010,
+        "dps": 459
+      },
+      "14": {
+        "hitpoints": 1172,
+        "damage": 1110,
+        "dps": 504
+      },
+      "15": {
+        "hitpoints": 1287,
+        "damage": 1220,
+        "dps": 554
+      }
+    }
+  },
+  {
+    "slug": "executioner",
+    "name": "Executioner",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": "2.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "4.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 800,
+        "area_damage": 210,
+        "dps": 87
+      },
+      "7": {
+        "hitpoints": 880,
+        "area_damage": 232,
+        "dps": 96
+      },
+      "8": {
+        "hitpoints": 965,
+        "area_damage": 254,
+        "dps": 105
+      },
+      "9": {
+        "hitpoints": 1060,
+        "area_damage": 278,
+        "dps": 115
+      },
+      "10": {
+        "hitpoints": 1165,
+        "area_damage": 306,
+        "dps": 127
+      },
+      "11": {
+        "hitpoints": 1280,
+        "area_damage": 336,
+        "dps": 140
+      },
+      "12": {
+        "hitpoints": 1405,
+        "area_damage": 370,
+        "dps": 154
+      },
+      "13": {
+        "hitpoints": 1545,
+        "area_damage": 406,
+        "dps": 169
+      },
+      "14": {
+        "hitpoints": 1695,
+        "area_damage": 446,
+        "dps": 185
+      },
+      "15": {
+        "hitpoints": 1860,
+        "area_damage": 490,
+        "dps": 204
+      }
+    }
+  },
+  {
+    "slug": "bandit",
+    "name": "Bandit",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "0.75",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 750,
+        "damage": 161,
+        "dps": 161
+      },
+      "10": {
+        "hitpoints": 824,
+        "damage": 176,
+        "dps": 176
+      },
+      "11": {
+        "hitpoints": 906,
+        "damage": 194,
+        "dps": 194
+      },
+      "12": {
+        "hitpoints": 994,
+        "damage": 213,
+        "dps": 213
+      },
+      "13": {
+        "hitpoints": 1093,
+        "damage": 234,
+        "dps": 234
+      },
+      "14": {
+        "hitpoints": 1200,
+        "damage": 257,
+        "dps": 257
+      }
+    }
+  },
+  {
+    "slug": "royal_recruits",
+    "name": "Royal Recruits",
+    "cost": 7,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x6",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.6",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 258,
+        "damage": 62,
+        "dps": 47
+      },
+      "4": {
+        "hitpoints": 284,
+        "damage": 69,
+        "dps": 53
+      },
+      "5": {
+        "hitpoints": 312,
+        "damage": 75,
+        "dps": 57
+      },
+      "6": {
+        "hitpoints": 342,
+        "damage": 83,
+        "dps": 63
+      },
+      "7": {
+        "hitpoints": 376,
+        "damage": 91,
+        "dps": 70
+      },
+      "8": {
+        "hitpoints": 413,
+        "damage": 100,
+        "dps": 76
+      },
+      "9": {
+        "hitpoints": 453,
+        "damage": 110,
+        "dps": 84
+      },
+      "10": {
+        "hitpoints": 498,
+        "damage": 121,
+        "dps": 93
+      },
+      "11": {
+        "hitpoints": 547,
+        "damage": 133,
+        "dps": 102
+      },
+      "12": {
+        "hitpoints": 601,
+        "damage": 146,
+        "dps": 112
+      },
+      "13": {
+        "hitpoints": 661,
+        "damage": 160,
+        "dps": 123
+      },
+      "14": {
+        "hitpoints": 725,
+        "damage": 176,
+        "dps": 135
+      }
+    }
+  },
+  {
+    "slug": "night_witch",
+    "name": "Night Witch",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.6",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 750,
+        "damage": 260,
+        "dps": 200
+      },
+      "10": {
+        "hitpoints": 824,
+        "damage": 286,
+        "dps": 220
+      },
+      "11": {
+        "hitpoints": 906,
+        "damage": 314,
+        "dps": 241
+      },
+      "12": {
+        "hitpoints": 994,
+        "damage": 345,
+        "dps": 265
+      },
+      "13": {
+        "hitpoints": 1093,
+        "damage": 380,
+        "dps": 292
+      },
+      "14": {
+        "hitpoints": 1200,
+        "damage": 416,
+        "dps": 320
+      }
+    }
+  },
+  {
+    "slug": "bats",
+    "name": "Bats",
+    "cost": 2,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x5",
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "Melee: Medium (1.2)",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "6": {
+        "hitpoints": 51,
+        "damage": 51,
+        "dps": 39
+      },
+      "7": {
+        "hitpoints": 56,
+        "damage": 56,
+        "dps": 43
+      },
+      "8": {
+        "hitpoints": 61,
+        "damage": 61,
+        "dps": 46
+      },
+      "9": {
+        "hitpoints": 67,
+        "damage": 67,
+        "dps": 51
+      },
+      "10": {
+        "hitpoints": 74,
+        "damage": 74,
+        "dps": 56
+      },
+      "11": {
+        "hitpoints": 81,
+        "damage": 81,
+        "dps": 62
+      },
+      "12": {
+        "hitpoints": 89,
+        "damage": 89,
+        "dps": 68
+      },
+      "13": {
+        "hitpoints": 98,
+        "damage": 98,
+        "dps": 75
+      },
+      "14": {
+        "hitpoints": 108,
+        "damage": 108,
+        "dps": 83
+      },
+      "15": {
+        "hitpoints": 119,
+        "damage": 119,
+        "dps": 91
+      }
+    }
+  },
+  {
+    "slug": "royal_ghost",
+    "name": "Royal Ghost",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.8s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1002,
+        "area_damage": 216,
+        "dps": 120
+      },
+      "10": {
+        "hitpoints": 1102,
+        "area_damage": 237,
+        "dps": 131
+      },
+      "11": {
+        "hitpoints": 1210,
+        "area_damage": 261,
+        "dps": 145
+      },
+      "12": {
+        "hitpoints": 1329,
+        "area_damage": 287,
+        "dps": 159
+      },
+      "13": {
+        "hitpoints": 1461,
+        "area_damage": 315,
+        "dps": 175
+      },
+      "14": {
+        "hitpoints": 1603,
+        "area_damage": 345,
+        "dps": 191
+      }
+    }
+  },
+  {
+    "slug": "ram_rider",
+    "name": "Ram Rider",
+    "cost": 5,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.8s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "0.8",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1405,
+        "damage": 207,
+        "dps": 115
+      },
+      "10": {
+        "hitpoints": 1544,
+        "damage": 228,
+        "dps": 126
+      },
+      "11": {
+        "hitpoints": 1697,
+        "damage": 250,
+        "dps": 138
+      },
+      "12": {
+        "hitpoints": 1863,
+        "damage": 275,
+        "dps": 152
+      },
+      "13": {
+        "hitpoints": 2048,
+        "damage": 302,
+        "dps": 167
+      },
+      "14": {
+        "hitpoints": 2247,
+        "damage": 332,
+        "dps": 184
+      }
+    }
+  },
+  {
+    "slug": "zappies",
+    "name": "Zappies",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "2.1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "4.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 331,
+        "damage": 73,
+        "dps": 34
+      },
+      "7": {
+        "hitpoints": 364,
+        "damage": 80,
+        "dps": 38
+      },
+      "8": {
+        "hitpoints": 399,
+        "damage": 88,
+        "dps": 41
+      },
+      "9": {
+        "hitpoints": 438,
+        "damage": 97,
+        "dps": 46
+      },
+      "10": {
+        "hitpoints": 482,
+        "damage": 107,
+        "dps": 50
+      },
+      "11": {
+        "hitpoints": 529,
+        "damage": 117,
+        "dps": 55
+      },
+      "12": {
+        "hitpoints": 581,
+        "damage": 129,
+        "dps": 61
+      },
+      "13": {
+        "hitpoints": 639,
+        "damage": 142,
+        "dps": 67
+      },
+      "14": {
+        "hitpoints": 701,
+        "damage": 155,
+        "dps": 73
+      }
+    }
+  },
+  {
+    "slug": "rascals",
+    "name": "Rascals",
+    "cost": 5,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "0.8",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 917,
+        "damage": 88,
+        "dps": 58
+      },
+      "4": {
+        "hitpoints": 1008,
+        "damage": 98,
+        "dps": 65
+      },
+      "5": {
+        "hitpoints": 1106,
+        "damage": 108,
+        "dps": 72
+      },
+      "6": {
+        "hitpoints": 1212,
+        "damage": 120,
+        "dps": 80
+      },
+      "7": {
+        "hitpoints": 1334,
+        "damage": 134,
+        "dps": 89
+      },
+      "8": {
+        "hitpoints": 1462,
+        "damage": 149,
+        "dps": 99
+      },
+      "9": {
+        "hitpoints": 1606,
+        "damage": 165,
+        "dps": 110
+      },
+      "10": {
+        "hitpoints": 1766,
+        "damage": 184,
+        "dps": 122
+      },
+      "11": {
+        "hitpoints": 1940,
+        "damage": 204,
+        "dps": 136
+      },
+      "12": {
+        "hitpoints": 2129,
+        "damage": 224,
+        "dps": 149
+      },
+      "13": {
+        "hitpoints": 2342,
+        "damage": 247,
+        "dps": 164
+      },
+      "14": {
+        "hitpoints": 2569,
+        "damage": 272,
+        "dps": 181
+      }
+    }
+  },
+  {
+    "slug": "cannon_cart",
+    "name": "Cannon Cart",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.9s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1498,
+        "damage": 175,
+        "dps": 194
+      },
+      "10": {
+        "hitpoints": 1647,
+        "damage": 193,
+        "dps": 215
+      },
+      "11": {
+        "hitpoints": 1809,
+        "damage": 212,
+        "dps": 235
+      },
+      "12": {
+        "hitpoints": 1986,
+        "damage": 233,
+        "dps": 258
+      },
+      "13": {
+        "hitpoints": 2184,
+        "damage": 256,
+        "dps": 284
+      },
+      "14": {
+        "hitpoints": 2396,
+        "damage": 281,
+        "dps": 312
+      }
+    }
+  },
+  {
+    "slug": "mega_knight",
+    "name": "Mega Knight",
+    "cost": 7,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.7s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 3307,
+        "area_damage": 222,
+        "dps": 130
+      },
+      "10": {
+        "hitpoints": 3634,
+        "area_damage": 244,
+        "dps": 143
+      },
+      "11": {
+        "hitpoints": 3993,
+        "area_damage": 268,
+        "dps": 157
+      },
+      "12": {
+        "hitpoints": 4383,
+        "area_damage": 295,
+        "dps": 173
+      },
+      "13": {
+        "hitpoints": 4820,
+        "area_damage": 324,
+        "dps": 190
+      },
+      "14": {
+        "hitpoints": 5288,
+        "area_damage": 355,
+        "dps": 208
+      }
+    }
+  },
+  {
+    "slug": "skeleton_barrel",
+    "name": "Skeleton Barrel",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x7",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "0.35",
+    "target": "Buildings",
+    "transport": "Air",
+    "levels": {
+      "3": {
+        "hitpoints": 251,
+        "death_damage": 68
+      },
+      "4": {
+        "hitpoints": 276,
+        "death_damage": 75
+      },
+      "5": {
+        "hitpoints": 303,
+        "death_damage": 83
+      },
+      "6": {
+        "hitpoints": 332,
+        "death_damage": 91
+      },
+      "7": {
+        "hitpoints": 366,
+        "death_damage": 100
+      },
+      "8": {
+        "hitpoints": 401,
+        "death_damage": 110
+      },
+      "9": {
+        "hitpoints": 440,
+        "death_damage": 120
+      },
+      "10": {
+        "hitpoints": 484,
+        "death_damage": 132
+      },
+      "11": {
+        "hitpoints": 532,
+        "death_damage": 145
+      },
+      "12": {
+        "hitpoints": 584,
+        "death_damage": 160
+      },
+      "13": {
+        "hitpoints": 642,
+        "death_damage": 176
+      },
+      "14": {
+        "hitpoints": 705,
+        "death_damage": 193
+      }
+    }
+  },
+  {
+    "slug": "flying_machine",
+    "name": "Flying Machine",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "6": {
+        "hitpoints": 384,
+        "damage": 107,
+        "dps": 97
+      },
+      "7": {
+        "hitpoints": 422,
+        "damage": 117,
+        "dps": 106
+      },
+      "8": {
+        "hitpoints": 463,
+        "damage": 129,
+        "dps": 117
+      },
+      "9": {
+        "hitpoints": 508,
+        "damage": 142,
+        "dps": 129
+      },
+      "10": {
+        "hitpoints": 559,
+        "damage": 156,
+        "dps": 141
+      },
+      "11": {
+        "hitpoints": 614,
+        "damage": 171,
+        "dps": 155
+      },
+      "12": {
+        "hitpoints": 674,
+        "damage": 188,
+        "dps": 170
+      },
+      "13": {
+        "hitpoints": 741,
+        "damage": 207,
+        "dps": 188
+      },
+      "14": {
+        "hitpoints": 813,
+        "damage": 227,
+        "dps": 206
+      }
+    }
+  },
+  {
+    "slug": "wall_breakers",
+    "name": "Wall Breakers",
+    "cost": 2,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "0.5",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 206,
+        "area_damage": 244
+      },
+      "7": {
+        "hitpoints": 227,
+        "area_damage": 269
+      },
+      "8": {
+        "hitpoints": 248,
+        "area_damage": 295
+      },
+      "9": {
+        "hitpoints": 273,
+        "area_damage": 324
+      },
+      "10": {
+        "hitpoints": 300,
+        "area_damage": 356
+      },
+      "11": {
+        "hitpoints": 330,
+        "area_damage": 391
+      },
+      "12": {
+        "hitpoints": 362,
+        "area_damage": 429
+      },
+      "13": {
+        "hitpoints": 398,
+        "area_damage": 472
+      },
+      "14": {
+        "hitpoints": 437,
+        "area_damage": 518
+      }
+    }
+  },
+  {
+    "slug": "royal_hogs",
+    "name": "Royal Hogs",
+    "cost": 5,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x4",
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "0.7",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 523,
+        "damage": 46,
+        "dps": 38
+      },
+      "7": {
+        "hitpoints": 575,
+        "damage": 51,
+        "dps": 42
+      },
+      "8": {
+        "hitpoints": 631,
+        "damage": 55,
+        "dps": 45
+      },
+      "9": {
+        "hitpoints": 693,
+        "damage": 61,
+        "dps": 50
+      },
+      "10": {
+        "hitpoints": 761,
+        "damage": 67,
+        "dps": 55
+      },
+      "11": {
+        "hitpoints": 837,
+        "damage": 74,
+        "dps": 61
+      },
+      "12": {
+        "hitpoints": 918,
+        "damage": 81,
+        "dps": 67
+      },
+      "13": {
+        "hitpoints": 1010,
+        "damage": 89,
+        "dps": 74
+      },
+      "14": {
+        "hitpoints": 1108,
+        "damage": 98,
+        "dps": 81
+      }
+    }
+  },
+  {
+    "slug": "goblin_giant",
+    "name": "Goblin Giant",
+    "cost": 6,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 2512,
+        "damage": 146,
+        "dps": 97
+      },
+      "10": {
+        "hitpoints": 2757,
+        "damage": 160,
+        "dps": 106
+      },
+      "11": {
+        "hitpoints": 3022,
+        "damage": 176,
+        "dps": 117
+      },
+      "12": {
+        "hitpoints": 3324,
+        "damage": 193,
+        "dps": 128
+      },
+      "13": {
+        "hitpoints": 3645,
+        "damage": 213,
+        "dps": 142
+      },
+      "14": {
+        "hitpoints": 4004,
+        "damage": 233,
+        "dps": 155
+      }
+    }
+  },
+  {
+    "slug": "fisherman",
+    "name": "Fisherman",
+    "cost": 3,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.3s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 720,
+        "damage": 161,
+        "dps": 123
+      },
+      "10": {
+        "hitpoints": 792,
+        "damage": 176,
+        "dps": 135
+      },
+      "11": {
+        "hitpoints": 870,
+        "damage": 194,
+        "dps": 149
+      },
+      "12": {
+        "hitpoints": 955,
+        "damage": 213,
+        "dps": 163
+      },
+      "13": {
+        "hitpoints": 1050,
+        "damage": 234,
+        "dps": 180
+      },
+      "14": {
+        "hitpoints": 1152,
+        "damage": 257,
+        "dps": 197
+      }
+    }
+  },
+  {
+    "slug": "magic_archer",
+    "name": "Magic Archer",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "7",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 438,
+        "area_damage": 110,
+        "dps": 99
+      },
+      "10": {
+        "hitpoints": 482,
+        "area_damage": 121,
+        "dps": 109
+      },
+      "11": {
+        "hitpoints": 529,
+        "area_damage": 133,
+        "dps": 120
+      },
+      "12": {
+        "hitpoints": 581,
+        "area_damage": 146,
+        "dps": 132
+      },
+      "13": {
+        "hitpoints": 639,
+        "area_damage": 160,
+        "dps": 145
+      },
+      "14": {
+        "hitpoints": 701,
+        "area_damage": 176,
+        "dps": 160
+      }
+    }
+  },
+  {
+    "slug": "electro_dragon",
+    "name": "Electro Dragon",
+    "cost": 5,
+    "rarity": "epic",
+    "type": "troop",
+    "count": "x3",
+    "hit_speed": "2.1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "3.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "9": {
+        "hitpoints": 786,
+        "damage": 159,
+        "dps": 75
+      },
+      "10": {
+        "hitpoints": 864,
+        "damage": 174,
+        "dps": 82
+      },
+      "11": {
+        "hitpoints": 949,
+        "damage": 192,
+        "dps": 91
+      },
+      "12": {
+        "hitpoints": 1042,
+        "damage": 210,
+        "dps": 100
+      },
+      "13": {
+        "hitpoints": 1146,
+        "damage": 231,
+        "dps": 110
+      },
+      "14": {
+        "hitpoints": 1257,
+        "damage": 254,
+        "dps": 120
+      }
+    }
+  },
+  {
+    "slug": "firecracker",
+    "name": "Firecracker",
+    "cost": 3,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x5",
+    "hit_speed": "3s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 143,
+        "area_damage": 30,
+        "dps": 50
+      },
+      "4": {
+        "hitpoints": 158,
+        "area_damage": 33,
+        "dps": 55
+      },
+      "5": {
+        "hitpoints": 173,
+        "area_damage": 36,
+        "dps": 60
+      },
+      "6": {
+        "hitpoints": 190,
+        "area_damage": 40,
+        "dps": 66
+      },
+      "7": {
+        "hitpoints": 209,
+        "area_damage": 44,
+        "dps": 73
+      },
+      "8": {
+        "hitpoints": 229,
+        "area_damage": 48,
+        "dps": 80
+      },
+      "9": {
+        "hitpoints": 252,
+        "area_damage": 53,
+        "dps": 88
+      },
+      "10": {
+        "hitpoints": 277,
+        "area_damage": 58,
+        "dps": 96
+      },
+      "11": {
+        "hitpoints": 304,
+        "area_damage": 64,
+        "dps": 106
+      },
+      "12": {
+        "hitpoints": 334,
+        "area_damage": 70,
+        "dps": 116
+      },
+      "13": {
+        "hitpoints": 367,
+        "area_damage": 77,
+        "dps": 128
+      },
+      "14": {
+        "hitpoints": 403,
+        "area_damage": 84,
+        "dps": 140
+      }
+    }
+  },
+  {
+    "slug": "mighty_miner",
+    "name": "Mighty Miner",
+    "cost": 4,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.6",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 2250,
+        "damage": 40,
+        "dps": 100
+      },
+      "12": {
+        "hitpoints": 2469,
+        "damage": 44,
+        "dps": 110
+      },
+      "13": {
+        "hitpoints": 2716,
+        "damage": 49,
+        "dps": 122
+      },
+      "14": {
+        "hitpoints": 2979,
+        "damage": 54,
+        "dps": 135
+      }
+    }
+  },
+  {
+    "slug": "elixir_golem",
+    "name": "Elixir Golem",
+    "cost": 3,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "0.8",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 980,
+        "damage": 158,
+        "dps": 143
+      },
+      "7": {
+        "hitpoints": 1078,
+        "damage": 174,
+        "dps": 158
+      },
+      "8": {
+        "hitpoints": 1183,
+        "damage": 191,
+        "dps": 173
+      },
+      "9": {
+        "hitpoints": 1299,
+        "damage": 209,
+        "dps": 189
+      },
+      "10": {
+        "hitpoints": 1428,
+        "damage": 230,
+        "dps": 209
+      },
+      "11": {
+        "hitpoints": 1569,
+        "damage": 253,
+        "dps": 229
+      },
+      "12": {
+        "hitpoints": 1722,
+        "damage": 278,
+        "dps": 252
+      },
+      "13": {
+        "hitpoints": 1894,
+        "damage": 305,
+        "dps": 277
+      },
+      "14": {
+        "hitpoints": 2078,
+        "damage": 335,
+        "dps": 304
+      }
+    }
+  },
+  {
+    "slug": "battle_healer",
+    "name": "Battle Healer",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.6",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 1073,
+        "damage": 92,
+        "dps": 61
+      },
+      "7": {
+        "hitpoints": 1180,
+        "damage": 102,
+        "dps": 68
+      },
+      "8": {
+        "hitpoints": 1295,
+        "damage": 111,
+        "dps": 74
+      },
+      "9": {
+        "hitpoints": 1422,
+        "damage": 122,
+        "dps": 81
+      },
+      "10": {
+        "hitpoints": 1563,
+        "damage": 135,
+        "dps": 90
+      },
+      "11": {
+        "hitpoints": 1717,
+        "damage": 148,
+        "dps": 98
+      },
+      "12": {
+        "hitpoints": 1885,
+        "damage": 162,
+        "dps": 108
+      },
+      "13": {
+        "hitpoints": 2073,
+        "damage": 179,
+        "dps": 119
+      },
+      "14": {
+        "hitpoints": 2274,
+        "damage": 196,
+        "dps": 130
+      }
+    }
+  },
+  {
+    "slug": "skeleton_king",
+    "name": "Skeleton King",
+    "cost": 4,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.6s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 2298,
+        "area_damage": 204,
+        "dps": 127
+      },
+      "12": {
+        "hitpoints": 2523,
+        "area_damage": 224,
+        "dps": 140
+      },
+      "13": {
+        "hitpoints": 2774,
+        "area_damage": 247,
+        "dps": 154
+      },
+      "14": {
+        "hitpoints": 3044,
+        "area_damage": 271,
+        "dps": 169
+      }
+    }
+  },
+  {
+    "slug": "archer_queen",
+    "name": "Archer Queen",
+    "cost": 5,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 1000,
+        "damage": 225,
+        "dps": 187
+      },
+      "12": {
+        "hitpoints": 1098,
+        "damage": 247,
+        "dps": 205
+      },
+      "13": {
+        "hitpoints": 1208,
+        "damage": 271,
+        "dps": 225
+      },
+      "14": {
+        "hitpoints": 1325,
+        "damage": 298,
+        "dps": 248
+      }
+    }
+  },
+  {
+    "slug": "golden_knight",
+    "name": "Golden Knight",
+    "cost": 4,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.9s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 1799,
+        "damage": 161,
+        "dps": 178
+      },
+      "12": {
+        "hitpoints": 1975,
+        "damage": 177,
+        "dps": 196
+      },
+      "13": {
+        "hitpoints": 2172,
+        "damage": 194,
+        "dps": 215
+      },
+      "14": {
+        "hitpoints": 2383,
+        "damage": 213,
+        "dps": 236
+      }
+    }
+  },
+  {
+    "slug": "monk",
+    "name": "Monk",
+    "cost": 5,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.8s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 2150,
+        "damage": 140,
+        "dps": 175
+      },
+      "12": {
+        "hitpoints": 2360,
+        "damage": 154,
+        "dps": 192
+      },
+      "13": {
+        "hitpoints": 2595,
+        "damage": 169,
+        "dps": 211
+      },
+      "14": {
+        "hitpoints": 2847,
+        "damage": 186,
+        "dps": 232
+      }
+    }
+  },
+  {
+    "slug": "skeleton_dragons",
+    "name": "Skeleton Dragons",
+    "cost": 4,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.9s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "3.5",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "3": {
+        "hitpoints": 264,
+        "area_damage": 76,
+        "dps": 40
+      },
+      "4": {
+        "hitpoints": 291,
+        "area_damage": 83,
+        "dps": 43
+      },
+      "5": {
+        "hitpoints": 319,
+        "area_damage": 91,
+        "dps": 47
+      },
+      "6": {
+        "hitpoints": 350,
+        "area_damage": 100,
+        "dps": 52
+      },
+      "7": {
+        "hitpoints": 385,
+        "area_damage": 110,
+        "dps": 57
+      },
+      "8": {
+        "hitpoints": 422,
+        "area_damage": 121,
+        "dps": 63
+      },
+      "9": {
+        "hitpoints": 464,
+        "area_damage": 133,
+        "dps": 70
+      },
+      "10": {
+        "hitpoints": 510,
+        "area_damage": 146,
+        "dps": 76
+      },
+      "11": {
+        "hitpoints": 560,
+        "area_damage": 161,
+        "dps": 84
+      },
+      "12": {
+        "hitpoints": 615,
+        "area_damage": 177,
+        "dps": 93
+      },
+      "13": {
+        "hitpoints": 676,
+        "area_damage": 194,
+        "dps": 102
+      },
+      "14": {
+        "hitpoints": 742,
+        "area_damage": 213,
+        "dps": 112
+      }
+    }
+  },
+  {
+    "slug": "mother_witch",
+    "name": "Mother Witch",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 438,
+        "damage": 110,
+        "dps": 110
+      },
+      "10": {
+        "hitpoints": 482,
+        "damage": 121,
+        "dps": 121
+      },
+      "11": {
+        "hitpoints": 529,
+        "damage": 133,
+        "dps": 133
+      },
+      "12": {
+        "hitpoints": 581,
+        "damage": 146,
+        "dps": 146
+      },
+      "13": {
+        "hitpoints": 639,
+        "damage": 160,
+        "dps": 160
+      },
+      "14": {
+        "hitpoints": 701,
+        "damage": 176,
+        "dps": 176
+      }
+    }
+  },
+  {
+    "slug": "electro_spirit",
+    "name": "Electro Spirit",
+    "cost": 1,
+    "rarity": "common",
+    "type": "troop",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "6": {
+        "hitpoints": 144,
+        "damage": 62
+      },
+      "7": {
+        "hitpoints": 158,
+        "damage": 68
+      },
+      "8": {
+        "hitpoints": 173,
+        "damage": 75
+      },
+      "9": {
+        "hitpoints": 190,
+        "damage": 82
+      },
+      "10": {
+        "hitpoints": 209,
+        "damage": 90
+      },
+      "11": {
+        "hitpoints": 230,
+        "damage": 99
+      },
+      "12": {
+        "hitpoints": 252,
+        "damage": 109
+      },
+      "13": {
+        "hitpoints": 278,
+        "damage": 120
+      },
+      "14": {
+        "hitpoints": 305,
+        "damage": 132
+      },
+      "15": {
+        "hitpoints": 334,
+        "damage": 145
+      }
+    }
+  },
+  {
+    "slug": "electro_giant",
+    "name": "Electro Giant",
+    "cost": 7,
+    "rarity": "epic",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "2.1s",
+    "deploy_time": "1s",
+    "speed": "Slow (45)",
+    "range": "1.2",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 3192,
+        "damage": 135,
+        "dps": 64
+      },
+      "10": {
+        "hitpoints": 3508,
+        "damage": 149,
+        "dps": 70
+      },
+      "11": {
+        "hitpoints": 3855,
+        "damage": 163,
+        "dps": 77
+      },
+      "12": {
+        "hitpoints": 4231,
+        "damage": 179,
+        "dps": 85
+      },
+      "13": {
+        "hitpoints": 4653,
+        "damage": 197,
+        "dps": 93
+      },
+      "14": {
+        "hitpoints": 5105,
+        "damage": 216,
+        "dps": 102
+      }
+    }
+  },
+  {
+    "slug": "phoenix",
+    "name": "Phoenix",
+    "cost": 4,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.6",
+    "target": "Air &amp; Ground",
+    "transport": "Air",
+    "levels": {
+      "9": {
+        "hitpoints": 871,
+        "damage": 180,
+        "dps": 180,
+        "death_damage": 135
+      },
+      "10": {
+        "hitpoints": 957,
+        "damage": 198,
+        "dps": 198,
+        "death_damage": 149
+      },
+      "11": {
+        "hitpoints": 1052,
+        "damage": 217,
+        "dps": 217,
+        "death_damage": 163
+      },
+      "12": {
+        "hitpoints": 1154,
+        "damage": 238,
+        "dps": 238,
+        "death_damage": 179
+      },
+      "13": {
+        "hitpoints": 1269,
+        "damage": 262,
+        "dps": 262,
+        "death_damage": 197
+      },
+      "14": {
+        "hitpoints": 1393,
+        "damage": 288,
+        "dps": 288,
+        "death_damage": 216
+      }
+    }
+  },
+  {
+    "slug": "little_prince",
+    "name": "Little Prince",
+    "cost": 3,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 698,
+        "damage": 99,
+        "dps": 82
+      },
+      "12": {
+        "hitpoints": 767,
+        "damage": 109,
+        "dps": 90
+      },
+      "13": {
+        "hitpoints": 843,
+        "damage": 120,
+        "dps": 100
+      },
+      "14": {
+        "hitpoints": 925,
+        "damage": 132,
+        "dps": 110
+      }
+    }
+  },
+  {
+    "slug": "goblin_demolisher",
+    "name": "Goblin Demolisher",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1076,
+        "damage": 154,
+        "dps": 128,
+        "death_damage": 334
+      },
+      "10": {
+        "hitpoints": 1183,
+        "damage": 170,
+        "dps": 141,
+        "death_damage": 368
+      },
+      "11": {
+        "hitpoints": 1300,
+        "damage": 186,
+        "dps": 155,
+        "death_damage": 404
+      },
+      "12": {
+        "hitpoints": 1427,
+        "damage": 205,
+        "dps": 170,
+        "death_damage": 443
+      },
+      "13": {
+        "hitpoints": 1569,
+        "damage": 225,
+        "dps": 187,
+        "death_damage": 488
+      },
+      "14": {
+        "hitpoints": 1722,
+        "damage": 247,
+        "dps": 205,
+        "death_damage": 535
+      }
+    }
+  },
+  {
+    "slug": "goblin_machine",
+    "name": "Goblin Machine",
+    "cost": 5,
+    "rarity": "legendary",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "1.2",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1780,
+        "damage": 175,
+        "area_damage": 252,
+        "dps": 145
+      },
+      "10": {
+        "hitpoints": 1957,
+        "damage": 193,
+        "area_damage": 277,
+        "dps": 160
+      },
+      "11": {
+        "hitpoints": 2150,
+        "damage": 212,
+        "area_damage": 304,
+        "dps": 176
+      },
+      "12": {
+        "hitpoints": 2360,
+        "damage": 233,
+        "area_damage": 334,
+        "dps": 194
+      },
+      "13": {
+        "hitpoints": 2595,
+        "damage": 256,
+        "area_damage": 367,
+        "dps": 213
+      },
+      "14": {
+        "hitpoints": 2847,
+        "damage": 281,
+        "area_damage": 403,
+        "dps": 234
+      }
+    }
+  },
+  {
+    "slug": "suspicious_bush",
+    "name": "Suspicious Bush",
+    "cost": 2,
+    "rarity": "rare",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": "1.4s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Short",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 67
+      },
+      "10": {
+        "hitpoints": 74
+      },
+      "11": {
+        "hitpoints": 81
+      },
+      "12": {
+        "hitpoints": 89
+      },
+      "13": {
+        "hitpoints": 98
+      },
+      "14": {
+        "hitpoints": 108
+      }
+    }
+  },
+  {
+    "slug": "goblinstein",
+    "name": "Goblinstein",
+    "cost": 5,
+    "rarity": "champion",
+    "type": "troop",
+    "count": "x2",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 721,
+        "damage": 92,
+        "area_damage": 128,
+        "dps": 51
+      },
+      "12": {
+        "hitpoints": 792,
+        "damage": 101,
+        "area_damage": 140,
+        "dps": 56
+      },
+      "13": {
+        "hitpoints": 871,
+        "damage": 111,
+        "area_damage": 154,
+        "dps": 61
+      },
+      "14": {
+        "hitpoints": 955,
+        "damage": 122,
+        "area_damage": 169,
+        "dps": 67
+      }
+    }
+  },
+  {
+    "slug": "rune_giant",
+    "name": "Rune Giant",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.5s",
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "Melee: Medium",
+    "target": "Buildings",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 2204,
+        "damage": 99,
+        "area_damage": 182,
+        "dps": 66
+      },
+      "10": {
+        "hitpoints": 2423,
+        "damage": 109,
+        "area_damage": 200,
+        "dps": 72
+      },
+      "11": {
+        "hitpoints": 2662,
+        "damage": 120,
+        "area_damage": 220,
+        "dps": 80
+      },
+      "12": {
+        "hitpoints": 2922,
+        "damage": 132,
+        "area_damage": 241,
+        "dps": 88
+      },
+      "13": {
+        "hitpoints": 3213,
+        "damage": 145,
+        "area_damage": 265,
+        "dps": 96
+      },
+      "14": {
+        "hitpoints": 3525,
+        "damage": 159,
+        "area_damage": 291,
+        "dps": 106
+      }
+    }
+  },
+  {
+    "slug": "berserker",
+    "name": "Berserker",
+    "cost": 2,
+    "rarity": "common",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "0.6s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Short",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 742,
+        "damage": 85,
+        "dps": 141
+      },
+      "10": {
+        "hitpoints": 815,
+        "damage": 93,
+        "dps": 155
+      },
+      "11": {
+        "hitpoints": 896,
+        "damage": 102,
+        "dps": 170
+      },
+      "12": {
+        "hitpoints": 983,
+        "damage": 112,
+        "dps": 186
+      },
+      "13": {
+        "hitpoints": 1081,
+        "damage": 123,
+        "dps": 205
+      },
+      "14": {
+        "hitpoints": 1186,
+        "damage": 135,
+        "dps": 225
+      }
+    }
+  },
+  {
+    "slug": "boss_bandit",
+    "name": "Boss Bandit",
+    "cost": 6,
+    "rarity": "champion",
+    "type": "troop",
+    "count": null,
+    "hit_speed": "1.2s",
+    "deploy_time": "1s",
+    "speed": "Fast (90)",
+    "range": "Melee: Short",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "11": {
+        "hitpoints": 2624,
+        "damage": 268,
+        "area_damage": 537,
+        "dps": 223
+      },
+      "12": {
+        "hitpoints": 2880,
+        "damage": 295,
+        "area_damage": 590,
+        "dps": 245
+      },
+      "13": {
+        "hitpoints": 3167,
+        "damage": 324,
+        "area_damage": 648,
+        "dps": 270
+      },
+      "14": {
+        "hitpoints": 3474,
+        "damage": 355,
+        "area_damage": 711,
+        "dps": 295
+      }
+    }
+  },
+  {
+    "slug": "cannon",
+    "name": "Cannon",
+    "cost": 3,
+    "rarity": "common",
+    "type": "building",
+    "count": null,
+    "hit_speed": "1s",
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "5.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "1": {
+        "hitpoints": 322,
+        "damage": 83,
+        "dps": 83
+      },
+      "2": {
+        "hitpoints": 354,
+        "damage": 91,
+        "dps": 91
+      },
+      "3": {
+        "hitpoints": 389,
+        "damage": 100,
+        "dps": 100
+      },
+      "4": {
+        "hitpoints": 428,
+        "damage": 110,
+        "dps": 110
+      },
+      "5": {
+        "hitpoints": 470,
+        "damage": 121,
+        "dps": 121
+      },
+      "6": {
+        "hitpoints": 515,
+        "damage": 132,
+        "dps": 132
+      },
+      "7": {
+        "hitpoints": 566,
+        "damage": 146,
+        "dps": 146
+      },
+      "8": {
+        "hitpoints": 621,
+        "damage": 160,
+        "dps": 160
+      },
+      "9": {
+        "hitpoints": 682,
+        "damage": 175,
+        "dps": 175
+      },
+      "10": {
+        "hitpoints": 750,
+        "damage": 193,
+        "dps": 193
+      },
+      "11": {
+        "hitpoints": 824,
+        "damage": 212,
+        "dps": 212
+      },
+      "12": {
+        "hitpoints": 904,
+        "damage": 233,
+        "dps": 233
+      },
+      "13": {
+        "hitpoints": 994,
+        "damage": 256,
+        "dps": 256
+      },
+      "14": {
+        "hitpoints": 1091,
+        "damage": 281,
+        "dps": 281
+      },
+      "15": {
+        "hitpoints": 1197,
+        "damage": 308,
+        "dps": 308
+      }
+    }
+  },
+  {
+    "slug": "goblin_hut",
+    "name": "Goblin Hut",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "building",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 580
+      },
+      "4": {
+        "hitpoints": 638
+      },
+      "5": {
+        "hitpoints": 700
+      },
+      "6": {
+        "hitpoints": 768
+      },
+      "7": {
+        "hitpoints": 844
+      },
+      "8": {
+        "hitpoints": 926
+      },
+      "9": {
+        "hitpoints": 1017
+      },
+      "10": {
+        "hitpoints": 1118
+      },
+      "11": {
+        "hitpoints": 1228
+      },
+      "12": {
+        "hitpoints": 1348
+      },
+      "13": {
+        "hitpoints": 1483
+      },
+      "14": {
+        "hitpoints": 1627
+      },
+      "15": {
+        "hitpoints": 1785
+      }
+    }
+  },
+  {
+    "slug": "mortar",
+    "name": "Mortar",
+    "cost": 4,
+    "rarity": "common",
+    "type": "building",
+    "count": null,
+    "hit_speed": "5s",
+    "deploy_time": "3.5s",
+    "speed": null,
+    "range": "3.5-11.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "1": {
+        "hitpoints": 535,
+        "area_damage": 104,
+        "dps": 20
+      },
+      "2": {
+        "hitpoints": 588,
+        "area_damage": 114,
+        "dps": 22
+      },
+      "3": {
+        "hitpoints": 647,
+        "area_damage": 125,
+        "dps": 25
+      },
+      "4": {
+        "hitpoints": 711,
+        "area_damage": 138,
+        "dps": 27
+      },
+      "5": {
+        "hitpoints": 781,
+        "area_damage": 151,
+        "dps": 30
+      },
+      "6": {
+        "hitpoints": 856,
+        "area_damage": 166,
+        "dps": 33
+      },
+      "7": {
+        "hitpoints": 941,
+        "area_damage": 183,
+        "dps": 36
+      },
+      "8": {
+        "hitpoints": 1032,
+        "area_damage": 200,
+        "dps": 40
+      },
+      "9": {
+        "hitpoints": 1134,
+        "area_damage": 220,
+        "dps": 44
+      },
+      "10": {
+        "hitpoints": 1246,
+        "area_damage": 242,
+        "dps": 48
+      },
+      "11": {
+        "hitpoints": 1369,
+        "area_damage": 266,
+        "dps": 53
+      },
+      "12": {
+        "hitpoints": 1503,
+        "area_damage": 292,
+        "dps": 58
+      },
+      "13": {
+        "hitpoints": 1653,
+        "area_damage": 321,
+        "dps": 64
+      },
+      "14": {
+        "hitpoints": 1813,
+        "area_damage": 352,
+        "dps": 70
+      },
+      "15": {
+        "hitpoints": 1990,
+        "area_damage": 386,
+        "dps": 77
+      }
+    }
+  },
+  {
+    "slug": "inferno_tower",
+    "name": "Inferno Tower",
+    "cost": 5,
+    "rarity": "rare",
+    "type": "building",
+    "count": null,
+    "hit_speed": "0.4s",
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 826,
+        "damage": 20,
+        "dps": 50
+      },
+      "4": {
+        "hitpoints": 908,
+        "damage": 22,
+        "dps": 55
+      },
+      "5": {
+        "hitpoints": 997,
+        "damage": 24,
+        "dps": 60
+      },
+      "6": {
+        "hitpoints": 1092,
+        "damage": 27,
+        "dps": 67
+      },
+      "7": {
+        "hitpoints": 1202,
+        "damage": 29,
+        "dps": 72
+      },
+      "8": {
+        "hitpoints": 1318,
+        "damage": 32,
+        "dps": 80
+      },
+      "9": {
+        "hitpoints": 1447,
+        "damage": 36,
+        "dps": 90
+      },
+      "10": {
+        "hitpoints": 1591,
+        "damage": 39,
+        "dps": 97
+      },
+      "11": {
+        "hitpoints": 1748,
+        "damage": 43,
+        "dps": 107
+      },
+      "12": {
+        "hitpoints": 1919,
+        "damage": 47,
+        "dps": 117
+      },
+      "13": {
+        "hitpoints": 2110,
+        "damage": 52,
+        "dps": 130
+      },
+      "14": {
+        "hitpoints": 2315,
+        "damage": 57,
+        "dps": 142
+      },
+      "15": {
+        "hitpoints": 2540,
+        "damage": 63,
+        "dps": 157
+      }
+    }
+  },
+  {
+    "slug": "bomb_tower",
+    "name": "Bomb Tower",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "building",
+    "count": null,
+    "hit_speed": "1.8s",
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "6",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 640,
+        "area_damage": 105,
+        "dps": 58,
+        "death_damage": 105
+      },
+      "4": {
+        "hitpoints": 704,
+        "area_damage": 115,
+        "dps": 63,
+        "death_damage": 115
+      },
+      "5": {
+        "hitpoints": 774,
+        "area_damage": 127,
+        "dps": 70,
+        "death_damage": 127
+      },
+      "6": {
+        "hitpoints": 851,
+        "area_damage": 139,
+        "dps": 77,
+        "death_damage": 139
+      },
+      "7": {
+        "hitpoints": 934,
+        "area_damage": 153,
+        "dps": 85,
+        "death_damage": 153
+      },
+      "8": {
+        "hitpoints": 1024,
+        "area_damage": 168,
+        "dps": 93,
+        "death_damage": 168
+      },
+      "9": {
+        "hitpoints": 1126,
+        "area_damage": 184,
+        "dps": 102,
+        "death_damage": 184
+      },
+      "10": {
+        "hitpoints": 1235,
+        "area_damage": 202,
+        "dps": 112,
+        "death_damage": 202
+      },
+      "11": {
+        "hitpoints": 1356,
+        "area_damage": 222,
+        "dps": 123,
+        "death_damage": 222
+      },
+      "12": {
+        "hitpoints": 1491,
+        "area_damage": 244,
+        "dps": 135,
+        "death_damage": 244
+      },
+      "13": {
+        "hitpoints": 1638,
+        "area_damage": 268,
+        "dps": 148,
+        "death_damage": 268
+      },
+      "14": {
+        "hitpoints": 1798,
+        "area_damage": 295,
+        "dps": 163,
+        "death_damage": 295
+      },
+      "15": {
+        "hitpoints": 1977,
+        "area_damage": 324,
+        "dps": 180,
+        "death_damage": 324
+      }
+    }
+  },
+  {
+    "slug": "barbarian_hut",
+    "name": "Barbarian Hut",
+    "cost": 6,
+    "rarity": "rare",
+    "type": "building",
+    "count": "x3",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 550
+      },
+      "4": {
+        "hitpoints": 605
+      },
+      "5": {
+        "hitpoints": 664
+      },
+      "6": {
+        "hitpoints": 728
+      },
+      "7": {
+        "hitpoints": 800
+      },
+      "8": {
+        "hitpoints": 878
+      },
+      "9": {
+        "hitpoints": 964
+      },
+      "10": {
+        "hitpoints": 1060
+      },
+      "11": {
+        "hitpoints": 1164
+      },
+      "12": {
+        "hitpoints": 1278
+      },
+      "13": {
+        "hitpoints": 1405
+      },
+      "14": {
+        "hitpoints": 1542
+      },
+      "15": {
+        "hitpoints": 1692
+      }
+    }
+  },
+  {
+    "slug": "tesla",
+    "name": "Tesla",
+    "cost": 4,
+    "rarity": "common",
+    "type": "building",
+    "count": null,
+    "hit_speed": "1.1s",
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "5.5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "1": {
+        "hitpoints": 450,
+        "damage": 86,
+        "dps": 78
+      },
+      "2": {
+        "hitpoints": 495,
+        "damage": 94,
+        "dps": 85
+      },
+      "3": {
+        "hitpoints": 544,
+        "damage": 104,
+        "dps": 94
+      },
+      "4": {
+        "hitpoints": 598,
+        "damage": 114,
+        "dps": 103
+      },
+      "5": {
+        "hitpoints": 657,
+        "damage": 125,
+        "dps": 113
+      },
+      "6": {
+        "hitpoints": 720,
+        "damage": 137,
+        "dps": 124
+      },
+      "7": {
+        "hitpoints": 792,
+        "damage": 151,
+        "dps": 137
+      },
+      "8": {
+        "hitpoints": 868,
+        "damage": 165,
+        "dps": 150
+      },
+      "9": {
+        "hitpoints": 954,
+        "damage": 182,
+        "dps": 165
+      },
+      "10": {
+        "hitpoints": 1048,
+        "damage": 200,
+        "dps": 181
+      },
+      "11": {
+        "hitpoints": 1152,
+        "damage": 220,
+        "dps": 199
+      },
+      "12": {
+        "hitpoints": 1264,
+        "damage": 241,
+        "dps": 219
+      },
+      "13": {
+        "hitpoints": 1390,
+        "damage": 265,
+        "dps": 240
+      },
+      "14": {
+        "hitpoints": 1525,
+        "damage": 291,
+        "dps": 264
+      },
+      "15": {
+        "hitpoints": 1674,
+        "damage": 319,
+        "dps": 290
+      }
+    }
+  },
+  {
+    "slug": "elixir_collector",
+    "name": "Elixir Collector",
+    "cost": 6,
+    "rarity": "rare",
+    "type": "building",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 505
+      },
+      "4": {
+        "hitpoints": 555
+      },
+      "5": {
+        "hitpoints": 610
+      },
+      "6": {
+        "hitpoints": 668
+      },
+      "7": {
+        "hitpoints": 735
+      },
+      "8": {
+        "hitpoints": 806
+      },
+      "9": {
+        "hitpoints": 886
+      },
+      "10": {
+        "hitpoints": 973
+      },
+      "11": {
+        "hitpoints": 1070
+      },
+      "12": {
+        "hitpoints": 1174
+      },
+      "13": {
+        "hitpoints": 1291
+      },
+      "14": {
+        "hitpoints": 1417
+      },
+      "15": {
+        "hitpoints": 1554
+      }
+    }
+  },
+  {
+    "slug": "x_bow",
+    "name": "X-Bow",
+    "cost": 6,
+    "rarity": "epic",
+    "type": "building",
+    "count": null,
+    "hit_speed": "0.3s",
+    "deploy_time": "3.5s",
+    "speed": null,
+    "range": "11.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1325,
+        "damage": 36,
+        "dps": 120
+      },
+      "10": {
+        "hitpoints": 1456,
+        "damage": 39,
+        "dps": 130
+      },
+      "11": {
+        "hitpoints": 1600,
+        "damage": 43,
+        "dps": 143
+      },
+      "12": {
+        "hitpoints": 1756,
+        "damage": 47,
+        "dps": 156
+      },
+      "13": {
+        "hitpoints": 1931,
+        "damage": 52,
+        "dps": 173
+      },
+      "14": {
+        "hitpoints": 2118,
+        "damage": 57,
+        "dps": 190
+      }
+    }
+  },
+  {
+    "slug": "tombstone",
+    "name": "Tombstone",
+    "cost": 3,
+    "rarity": "rare",
+    "type": "building",
+    "count": "x2",
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 250
+      },
+      "4": {
+        "hitpoints": 275
+      },
+      "5": {
+        "hitpoints": 302
+      },
+      "6": {
+        "hitpoints": 331
+      },
+      "7": {
+        "hitpoints": 364
+      },
+      "8": {
+        "hitpoints": 400
+      },
+      "9": {
+        "hitpoints": 438
+      },
+      "10": {
+        "hitpoints": 482
+      },
+      "11": {
+        "hitpoints": 529
+      },
+      "12": {
+        "hitpoints": 581
+      },
+      "13": {
+        "hitpoints": 639
+      },
+      "14": {
+        "hitpoints": 701
+      },
+      "15": {
+        "hitpoints": 770
+      }
+    }
+  },
+  {
+    "slug": "furnace",
+    "name": "Furnace",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "building",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": "6",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 343,
+        "area_damage": 84,
+        "dps": 46
+      },
+      "4": {
+        "hitpoints": 377,
+        "area_damage": 93,
+        "dps": 51
+      },
+      "5": {
+        "hitpoints": 414,
+        "area_damage": 102,
+        "dps": 56
+      },
+      "6": {
+        "hitpoints": 454,
+        "area_damage": 112,
+        "dps": 62
+      },
+      "7": {
+        "hitpoints": 499,
+        "area_damage": 123,
+        "dps": 68
+      },
+      "8": {
+        "hitpoints": 548,
+        "area_damage": 135,
+        "dps": 75
+      },
+      "9": {
+        "hitpoints": 602,
+        "area_damage": 148,
+        "dps": 82
+      },
+      "10": {
+        "hitpoints": 661,
+        "area_damage": 163,
+        "dps": 90
+      },
+      "11": {
+        "hitpoints": 727,
+        "area_damage": 179,
+        "dps": 99
+      },
+      "12": {
+        "hitpoints": 798,
+        "area_damage": 196,
+        "dps": 108
+      },
+      "13": {
+        "hitpoints": 877,
+        "area_damage": 216,
+        "dps": 120
+      },
+      "14": {
+        "hitpoints": 962,
+        "area_damage": 237,
+        "dps": 131
+      },
+      "15": {
+        "hitpoints": 1056,
+        "area_damage": 260,
+        "dps": 144
+      }
+    }
+  },
+  {
+    "slug": "goblin_cage",
+    "name": "Goblin Cage",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "building",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "3": {
+        "hitpoints": 369
+      },
+      "4": {
+        "hitpoints": 405
+      },
+      "5": {
+        "hitpoints": 445
+      },
+      "6": {
+        "hitpoints": 488
+      },
+      "7": {
+        "hitpoints": 536
+      },
+      "8": {
+        "hitpoints": 588
+      },
+      "9": {
+        "hitpoints": 646
+      },
+      "10": {
+        "hitpoints": 710
+      },
+      "11": {
+        "hitpoints": 780
+      },
+      "12": {
+        "hitpoints": 857
+      },
+      "13": {
+        "hitpoints": 942
+      },
+      "14": {
+        "hitpoints": 1033
+      },
+      "15": {
+        "hitpoints": 1134
+      }
+    }
+  },
+  {
+    "slug": "goblin_drill",
+    "name": "Goblin Drill",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "building",
+    "count": "x2",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "6": {
+        "hitpoints": 820,
+        "area_damage": 52
+      },
+      "7": {
+        "hitpoints": 902,
+        "area_damage": 58
+      },
+      "8": {
+        "hitpoints": 990,
+        "area_damage": 63
+      },
+      "9": {
+        "hitpoints": 1087,
+        "area_damage": 69
+      },
+      "10": {
+        "hitpoints": 1195,
+        "area_damage": 76
+      },
+      "11": {
+        "hitpoints": 1313,
+        "area_damage": 84
+      },
+      "12": {
+        "hitpoints": 1441,
+        "area_damage": 92
+      },
+      "13": {
+        "hitpoints": 1585,
+        "area_damage": 101
+      },
+      "14": {
+        "hitpoints": 1739,
+        "area_damage": 111
+      },
+      "15": {
+        "hitpoints": 1908,
+        "area_damage": 122
+      }
+    }
+  },
+  {
+    "slug": "fireball",
+    "name": "Fireball",
+    "cost": 4,
+    "rarity": "rare",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "area_damage": 325
+      },
+      "4": {
+        "area_damage": 357
+      },
+      "5": {
+        "area_damage": 392
+      },
+      "6": {
+        "area_damage": 430
+      },
+      "7": {
+        "area_damage": 473
+      },
+      "8": {
+        "area_damage": 519
+      },
+      "9": {
+        "area_damage": 570
+      },
+      "10": {
+        "area_damage": 626
+      },
+      "11": {
+        "area_damage": 688
+      },
+      "12": {
+        "area_damage": 755
+      },
+      "13": {
+        "area_damage": 831
+      },
+      "14": {
+        "area_damage": 911
+      },
+      "15": {
+        "area_damage": 1000
+      }
+    }
+  },
+  {
+    "slug": "arrows",
+    "name": "Arrows",
+    "cost": 3,
+    "rarity": "common",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "area_damage": 228
+      },
+      "7": {
+        "area_damage": 252
+      },
+      "8": {
+        "area_damage": 276
+      },
+      "9": {
+        "area_damage": 303
+      },
+      "10": {
+        "area_damage": 333
+      },
+      "11": {
+        "area_damage": 366
+      },
+      "12": {
+        "area_damage": 402
+      },
+      "13": {
+        "area_damage": 444
+      },
+      "14": {
+        "area_damage": 486
+      },
+      "15": {
+        "area_damage": 534
+      }
+    }
+  },
+  {
+    "slug": "rage",
+    "name": "Rage",
+    "cost": 2,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Friendly Troops &amp; Buildings",
+    "transport": null,
+    "levels": {
+      "6": {
+        "area_damage": 106
+      },
+      "7": {
+        "area_damage": 117
+      },
+      "8": {
+        "area_damage": 130
+      },
+      "9": {
+        "area_damage": 145
+      },
+      "10": {
+        "area_damage": 161
+      },
+      "11": {
+        "area_damage": 179
+      },
+      "12": {
+        "area_damage": 197
+      },
+      "13": {
+        "area_damage": 217
+      },
+      "14": {
+        "area_damage": 238
+      },
+      "15": {
+        "area_damage": 262
+      }
+    }
+  },
+  {
+    "slug": "rocket",
+    "name": "Rocket",
+    "cost": 6,
+    "rarity": "rare",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "3": {
+        "area_damage": 701
+      },
+      "4": {
+        "area_damage": 771
+      },
+      "5": {
+        "area_damage": 846
+      },
+      "6": {
+        "area_damage": 928
+      },
+      "7": {
+        "area_damage": 1020
+      },
+      "8": {
+        "area_damage": 1119
+      },
+      "9": {
+        "area_damage": 1229
+      },
+      "10": {
+        "area_damage": 1351
+      },
+      "11": {
+        "area_damage": 1484
+      },
+      "12": {
+        "area_damage": 1629
+      },
+      "13": {
+        "area_damage": 1792
+      },
+      "14": {
+        "area_damage": 1966
+      },
+      "15": {
+        "area_damage": 2157
+      }
+    }
+  },
+  {
+    "slug": "goblin_barrel",
+    "name": "Goblin Barrel",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "spell",
+    "count": "x3",
+    "hit_speed": "1.1s",
+    "deploy_time": "1.1s",
+    "speed": "Very Fast (120)",
+    "range": "0.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 167,
+        "damage": 99,
+        "dps": 90
+      },
+      "10": {
+        "hitpoints": 184,
+        "damage": 109,
+        "dps": 99
+      },
+      "11": {
+        "hitpoints": 202,
+        "damage": 120,
+        "dps": 109
+      },
+      "12": {
+        "hitpoints": 221,
+        "damage": 132,
+        "dps": 120
+      },
+      "13": {
+        "hitpoints": 244,
+        "damage": 145,
+        "dps": 131
+      },
+      "14": {
+        "hitpoints": 267,
+        "damage": 159,
+        "dps": 144
+      }
+    }
+  },
+  {
+    "slug": "freeze",
+    "name": "Freeze",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "area_damage": 72
+      },
+      "7": {
+        "area_damage": 79
+      },
+      "8": {
+        "area_damage": 86
+      },
+      "9": {
+        "area_damage": 95
+      },
+      "10": {
+        "area_damage": 104
+      },
+      "11": {
+        "area_damage": 115
+      },
+      "12": {
+        "area_damage": 126
+      },
+      "13": {
+        "area_damage": 139
+      },
+      "14": {
+        "area_damage": 152
+      },
+      "15": {
+        "area_damage": 167
+      }
+    }
+  },
+  {
+    "slug": "mirror",
+    "name": "Mirror",
+    "cost": 0,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {}
+  },
+  {
+    "slug": "lightning",
+    "name": "Lightning",
+    "cost": 6,
+    "rarity": "epic",
+    "type": "spell",
+    "count": "x3",
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "damage": 660
+      },
+      "7": {
+        "damage": 726
+      },
+      "8": {
+        "damage": 797
+      },
+      "9": {
+        "damage": 875
+      },
+      "10": {
+        "damage": 962
+      },
+      "11": {
+        "damage": 1057
+      },
+      "12": {
+        "damage": 1160
+      },
+      "13": {
+        "damage": 1276
+      },
+      "14": {
+        "damage": 1400
+      },
+      "15": {
+        "damage": 1536
+      }
+    }
+  },
+  {
+    "slug": "zap",
+    "name": "Zap",
+    "cost": 2,
+    "rarity": "common",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "area_damage": 120
+      },
+      "7": {
+        "area_damage": 132
+      },
+      "8": {
+        "area_damage": 144
+      },
+      "9": {
+        "area_damage": 159
+      },
+      "10": {
+        "area_damage": 174
+      },
+      "11": {
+        "area_damage": 192
+      },
+      "12": {
+        "area_damage": 210
+      },
+      "13": {
+        "area_damage": 231
+      },
+      "14": {
+        "area_damage": 254
+      },
+      "15": {
+        "area_damage": 279
+      }
+    }
+  },
+  {
+    "slug": "poison",
+    "name": "Poison",
+    "cost": 4,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "area_damage": 456,
+        "dps": 57
+      },
+      "7": {
+        "area_damage": 504,
+        "dps": 63
+      },
+      "8": {
+        "area_damage": 552,
+        "dps": 69
+      },
+      "9": {
+        "area_damage": 608,
+        "dps": 76
+      },
+      "10": {
+        "area_damage": 664,
+        "dps": 83
+      },
+      "11": {
+        "area_damage": 736,
+        "dps": 92
+      },
+      "12": {
+        "area_damage": 808,
+        "dps": 101
+      },
+      "13": {
+        "area_damage": 888,
+        "dps": 111
+      },
+      "14": {
+        "area_damage": 976,
+        "dps": 122
+      },
+      "15": {
+        "area_damage": 1064,
+        "dps": 133
+      }
+    }
+  },
+  {
+    "slug": "graveyard",
+    "name": "Graveyard",
+    "cost": 5,
+    "rarity": "legendary",
+    "type": "spell",
+    "count": "x13",
+    "hit_speed": null,
+    "deploy_time": "2.2s",
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 67,
+        "damage": 67,
+        "dps": 67
+      },
+      "10": {
+        "hitpoints": 74,
+        "damage": 74,
+        "dps": 74
+      },
+      "11": {
+        "hitpoints": 81,
+        "damage": 81,
+        "dps": 81
+      },
+      "12": {
+        "hitpoints": 89,
+        "damage": 89,
+        "dps": 89
+      },
+      "13": {
+        "hitpoints": 98,
+        "damage": 98,
+        "dps": 98
+      },
+      "14": {
+        "hitpoints": 108,
+        "damage": 108,
+        "dps": 108
+      }
+    }
+  },
+  {
+    "slug": "the_log",
+    "name": "The Log",
+    "cost": 2,
+    "rarity": "legendary",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": "10.1",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "area_damage": 220
+      },
+      "10": {
+        "area_damage": 242
+      },
+      "11": {
+        "area_damage": 266
+      },
+      "12": {
+        "area_damage": 292
+      },
+      "13": {
+        "area_damage": 321
+      },
+      "14": {
+        "area_damage": 352
+      },
+      "15": {
+        "area_damage": 387
+      }
+    }
+  },
+  {
+    "slug": "tornado",
+    "name": "Tornado",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "6": {
+        "damage": 52
+      },
+      "7": {
+        "damage": 58
+      },
+      "8": {
+        "damage": 63
+      },
+      "9": {
+        "damage": 69
+      },
+      "10": {
+        "damage": 76
+      },
+      "11": {
+        "damage": 84
+      },
+      "12": {
+        "damage": 92
+      },
+      "13": {
+        "damage": 101
+      },
+      "14": {
+        "damage": 111
+      },
+      "15": {
+        "damage": 122
+      }
+    }
+  },
+  {
+    "slug": "clone",
+    "name": "Clone",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1
+      },
+      "10": {
+        "hitpoints": 1
+      },
+      "11": {
+        "hitpoints": 1
+      },
+      "12": {
+        "hitpoints": 1
+      },
+      "13": {
+        "hitpoints": 1
+      },
+      "14": {
+        "hitpoints": 1
+      }
+    }
+  },
+  {
+    "slug": "earthquake",
+    "name": "Earthquake",
+    "cost": 3,
+    "rarity": "rare",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "damage": 69,
+        "area_damage": 238,
+        "dps": 69
+      },
+      "10": {
+        "damage": 76,
+        "area_damage": 262,
+        "dps": 76
+      },
+      "11": {
+        "damage": 84,
+        "area_damage": 287,
+        "dps": 84
+      },
+      "12": {
+        "damage": 92,
+        "area_damage": 315,
+        "dps": 92
+      },
+      "13": {
+        "damage": 101,
+        "area_damage": 346,
+        "dps": 101
+      },
+      "14": {
+        "damage": 111,
+        "area_damage": 381,
+        "dps": 111
+      }
+    }
+  },
+  {
+    "slug": "barbarian_barrel",
+    "name": "Barbarian Barrel",
+    "cost": 2,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": "1.3s",
+    "deploy_time": "0.5s",
+    "speed": "Medium (60)",
+    "range": "4.5",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 555,
+        "damage": 199,
+        "area_damage": 159,
+        "dps": 122
+      },
+      "10": {
+        "hitpoints": 610,
+        "damage": 219,
+        "area_damage": 174,
+        "dps": 133
+      },
+      "11": {
+        "hitpoints": 670,
+        "damage": 240,
+        "area_damage": 192,
+        "dps": 147
+      },
+      "12": {
+        "hitpoints": 736,
+        "damage": 264,
+        "area_damage": 210,
+        "dps": 161
+      },
+      "13": {
+        "hitpoints": 809,
+        "damage": 290,
+        "area_damage": 231,
+        "dps": 177
+      },
+      "14": {
+        "hitpoints": 888,
+        "damage": 318,
+        "area_damage": 254,
+        "dps": 195
+      }
+    }
+  },
+  {
+    "slug": "heal_spirit",
+    "name": "Heal Spirit",
+    "cost": 1,
+    "rarity": "rare",
+    "type": "spell",
+    "count": "x1",
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Very Fast (120)",
+    "range": "2.5",
+    "target": "Air &amp; Ground",
+    "transport": "Ground",
+    "levels": {
+      "3": {
+        "hitpoints": 108,
+        "area_damage": 52
+      },
+      "4": {
+        "hitpoints": 119,
+        "area_damage": 57
+      },
+      "5": {
+        "hitpoints": 131,
+        "area_damage": 62
+      },
+      "6": {
+        "hitpoints": 144,
+        "area_damage": 68
+      },
+      "7": {
+        "hitpoints": 158,
+        "area_damage": 75
+      },
+      "8": {
+        "hitpoints": 173,
+        "area_damage": 82
+      },
+      "9": {
+        "hitpoints": 190,
+        "area_damage": 91
+      },
+      "10": {
+        "hitpoints": 209,
+        "area_damage": 100
+      },
+      "11": {
+        "hitpoints": 230,
+        "area_damage": 110
+      },
+      "12": {
+        "hitpoints": 252,
+        "area_damage": 120
+      },
+      "13": {
+        "hitpoints": 278,
+        "area_damage": 132
+      },
+      "14": {
+        "hitpoints": 305,
+        "area_damage": 145
+      },
+      "15": {
+        "hitpoints": 334,
+        "area_damage": 159
+      }
+    }
+  },
+  {
+    "slug": "giant_snowball",
+    "name": "Giant Snowball",
+    "cost": 2,
+    "rarity": "common",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "damage": 148
+      },
+      "10": {
+        "damage": 163
+      },
+      "11": {
+        "damage": 179
+      },
+      "12": {
+        "damage": 196
+      },
+      "13": {
+        "damage": 216
+      },
+      "14": {
+        "damage": 237
+      }
+    }
+  },
+  {
+    "slug": "royal_delivery",
+    "name": "Royal Delivery",
+    "cost": 3,
+    "rarity": "common",
+    "type": "spell",
+    "count": null,
+    "hit_speed": "1.3s",
+    "deploy_time": "3s",
+    "speed": "Medium (60)",
+    "range": "Melee: Long",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 453,
+        "damage": 362,
+        "area_damage": 110,
+        "dps": 84
+      },
+      "10": {
+        "hitpoints": 498,
+        "damage": 398,
+        "area_damage": 121,
+        "dps": 93
+      },
+      "11": {
+        "hitpoints": 547,
+        "damage": 437,
+        "area_damage": 133,
+        "dps": 102
+      },
+      "12": {
+        "hitpoints": 601,
+        "damage": 480,
+        "area_damage": 146,
+        "dps": 112
+      },
+      "13": {
+        "hitpoints": 661,
+        "damage": 528,
+        "area_damage": 160,
+        "dps": 123
+      },
+      "14": {
+        "hitpoints": 725,
+        "damage": 579,
+        "area_damage": 176,
+        "dps": 135
+      }
+    }
+  },
+  {
+    "slug": "void",
+    "name": "Void",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "damage": 265,
+        "area_damage": 132
+      },
+      "10": {
+        "damage": 291,
+        "area_damage": 145
+      },
+      "11": {
+        "damage": 320,
+        "area_damage": 160
+      },
+      "12": {
+        "damage": 351,
+        "area_damage": 175
+      },
+      "13": {
+        "damage": 386,
+        "area_damage": 193
+      },
+      "14": {
+        "damage": 423,
+        "area_damage": 211
+      }
+    }
+  },
+  {
+    "slug": "goblin_curse",
+    "name": "Goblin Curse",
+    "cost": 2,
+    "rarity": "epic",
+    "type": "spell",
+    "count": null,
+    "hit_speed": "1.1s",
+    "deploy_time": null,
+    "speed": "Very Fast (120)",
+    "range": "Melee: Short",
+    "target": "Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "damage": 25,
+        "dps": 25
+      },
+      "10": {
+        "damage": 27,
+        "dps": 27
+      },
+      "11": {
+        "damage": 30,
+        "dps": 30
+      },
+      "12": {
+        "damage": 33,
+        "dps": 33
+      },
+      "13": {
+        "damage": 37,
+        "dps": 37
+      },
+      "14": {
+        "damage": 40,
+        "dps": 40
+      }
+    }
+  },
+  {
+    "slug": "spirit_empress",
+    "name": "Spirit Empress",
+    "cost": 6,
+    "rarity": "legendary",
+    "type": "spell",
+    "count": null,
+    "hit_speed": null,
+    "deploy_time": "1s",
+    "speed": "Medium (60)",
+    "range": "5",
+    "target": "Air &amp; Ground",
+    "transport": null,
+    "levels": {
+      "9": {
+        "hitpoints": 1068,
+        "damage": 249,
+        "dps": 177
+      },
+      "10": {
+        "hitpoints": 1186,
+        "damage": 276,
+        "dps": 197
+      },
+      "11": {
+        "hitpoints": 1318,
+        "damage": 307,
+        "dps": 219
+      },
+      "12": {
+        "hitpoints": 1450,
+        "damage": 337,
+        "dps": 240
+      },
+      "13": {
+        "hitpoints": 1595,
+        "damage": 371,
+        "dps": 265
+      },
+      "14": {
+        "hitpoints": 1754,
+        "damage": 408,
+        "dps": 291
+      }
+    }
+  },
+  {
+    "slug": "vines",
+    "name": "Vines",
+    "cost": 3,
+    "rarity": "epic",
+    "type": "spell",
+    "count": "x3",
+    "hit_speed": null,
+    "deploy_time": null,
+    "speed": null,
+    "range": null,
+    "target": null,
+    "transport": null,
+    "levels": {
+      "9": {
+        "dps": 55
+      },
+      "10": {
+        "dps": 60
+      },
+      "11": {
+        "dps": 153
+      },
+      "12": {
+        "dps": 168
+      },
+      "13": {
+        "dps": 188
+      },
+      "14": {
+        "dps": 203
+      }
+    }
+  }
+]
