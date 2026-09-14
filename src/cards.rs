@@ -44,11 +44,16 @@ pub fn shuffled_deck(seed: u32) -> Vec<u8> {
 }
 
 impl Decks {
-    /// 双方牌库（不同固定种子，两端客户端生成结果一致）
+    /// 双方牌库（固定种子，单机/测试用）
     pub fn shuffled() -> Self {
+        Self::shuffled_with(42)
+    }
+
+    /// 双方牌库（指定种子；联网对局由中继在 Start 中下发，逐局变化）
+    pub fn shuffled_with(seed: u32) -> Self {
         Self {
-            player: shuffled_deck(100),
-            enemy: shuffled_deck(200),
+            player: shuffled_deck(seed),
+            enemy: shuffled_deck(seed.wrapping_add(0x9E3779B9)),
         }
     }
 

@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-use bevy_hello::constants::{INPUT_DELAY, TICKS_PER_SEC};
-use bevy_hello::protocol::{read_msg, write_msg, ClientMsg, LogEntry, ReplayFile, ServerMsg};
+use bevy_hello::constants::{INPUT_DELAY, RIVER_HALF_WIDTH, TICKS_PER_SEC};
+use bevy_hello::protocol::{read_msg, write_msg, ClientMsg, CommandWire, LogEntry, ReplayFile, ServerMsg};
 
 /// 双方都离线后房间保留时长（超时清房）
 const EMPTY_ROOM_TTL_SECS: u64 = 600;
@@ -32,6 +32,10 @@ struct Room {
     /// 座位，Vec 下标即玩家序号，最多 2 个
     seats: Vec<Seat>,
     started: bool,
+    /// 本局牌库种子（开局时生成，重连时随 History 下发）
+    seed: u32,
+    /// 创建时间（清理长期未开局的房间用）
+    created_at: Instant,
     /// 指令日志：只记非空帧（重连追帧 + 录像回放的数据源）
     log: Vec<LogEntry>,
     /// 双方都离线的冻结点：（离线时刻, 当时的帧号估算）
@@ -54,11 +58,11 @@ fn save_replay(room: u32, room_state: &mut Room, end_tick: u32, tag: &str) {
         entries: room_state.log.clone(),
     };
     let _ = std::fs::create_dir_all("replays");
-    let secs = std::time::SystemTime::now()
+    let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0);
-    let path = format!("replays/room{room}_{tag}_{secs}.cr");
+    let path = format!("replays/room{room}_{tag}_{millis}.cr");
     match bincode::serialize(&file) {
         Ok(bytes) => {
             if std::fs::write(&path, bytes).is_ok() {
@@ -111,6 +115,41 @@ fn main() -> io::Result<()> {
     println!("relay listening on {addr}");
 
     let rooms: Rooms = Arc::new(Mutex::new(HashMap::new()));
+
+    // 看门线程：定期清理
+    // - 冻结超时的房间（先落盘弃局录像）
+    // - 长期未开局的房间（有人进房但一直凑不齐人，防泄漏）
+    {
+        let rooms = rooms.clone();
+        thread::spawn(move || loop {
+            thread::sleep(std::time::Duration::from_secs(60));
+            let mut rooms = rooms.lock().unwrap();
+            let expired: Vec<u32> = rooms
+                .iter()
+                .filter(|(_, r)| {
+                    match r.frozen_at {
+                        Some((t, _)) => t.elapsed().as_secs() > EMPTY_ROOM_TTL_SECS,
+                        // 未开局房间超过 TTL 还没凑齐人
+                        None => {
+                            !r.started
+                                && r.created_at.elapsed().as_secs() > EMPTY_ROOM_TTL_SECS
+                        }
+                    }
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            for id in expired {
+                if let Some(mut room_state) = rooms.remove(&id) {
+                    if room_state.started {
+                        let end = room_state.tick_estimate();
+                        save_replay(id, &mut room_state, end, "partial");
+                    }
+                    println!("room {id} expired by janitor");
+                }
+            }
+        });
+    }
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -172,6 +211,8 @@ fn handle_client(mut stream: TcpStream, rooms: Rooms) {
                 let room_state = rooms.entry(room).or_insert_with(|| Room {
                     seats: Vec::new(),
                     started: false,
+                    seed: 0,
+                    created_at: Instant::now(),
                     log: Vec::new(),
                     frozen_at: None,
                     saved: false,
@@ -199,6 +240,7 @@ fn handle_client(mut stream: TcpStream, rooms: Rooms) {
                         let _ = tx.send(ServerMsg::History {
                             entries: room_state.log.clone(),
                             current_tick,
+                            seed: room_state.seed,
                         });
                         // 补发离线期间错过的对手指令包
                         let seat = &mut room_state.seats[idx];
@@ -211,7 +253,6 @@ fn handle_client(mut stream: TcpStream, rooms: Rooms) {
                         if let Some(other) = room_state.other(my_index) {
                             if other.connected {
                                 let _ = other.tx.send(ServerMsg::OpponentBack);
-                                let _ = tx.send(ServerMsg::Start);
                             }
                         }
                     } else {
@@ -240,17 +281,37 @@ fn handle_client(mut stream: TcpStream, rooms: Rooms) {
                 println!("[{peer}] joined room {room} as player {my_index}");
                 if room_state.seats.len() == 2 {
                     room_state.started = true;
+                    // 本局牌库种子：两端一致但逐局变化（防牌序被预知）
+                    let seed = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos())
+                        .unwrap_or(1)
+                        ^ room;
+                    room_state.seed = seed;
                     for seat in &room_state.seats {
-                        let _ = seat.tx.send(ServerMsg::Start);
+                        let _ = seat.tx.send(ServerMsg::Start { seed });
                     }
-                    println!("room {room} game start");
+                    println!("room {room} game start (seed {seed})");
                 }
             }
-            ClientMsg::Commands { tick, cmds } => {
+            ClientMsg::Commands { tick, mut cmds } => {
                 let mut rooms = rooms.lock().unwrap();
                 if let Some(room_state) = my_room.and_then(|r| rooms.get_mut(&r)) {
                     if let Some(seat) = room_state.seats.get_mut(my_index as usize) {
                         seat.last_stamp = seat.last_stamp.max(tick);
+                    }
+                    // 服务端权威校验：防改版客户端作弊
+                    // 阵营强制为发送方；坐标钳制到发送方半场
+                    for c in &mut cmds {
+                        let CommandWire::Deploy { faction, x, z, .. } = c;
+                        *faction = my_index;
+                        *x = x.clamp(-8.0, 8.0);
+                        let (lo, hi) = if my_index == 0 {
+                            (-14.0, -RIVER_HALF_WIDTH)
+                        } else {
+                            (RIVER_HALF_WIDTH, 14.0)
+                        };
+                        *z = z.clamp(lo, hi);
                     }
                     // 指令日志只记非空帧（空帧是屏障心跳，追帧时隐式处理）
                     if !cmds.is_empty() {

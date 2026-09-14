@@ -55,10 +55,14 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     /// 分配玩家序号：0 = 先到的（蓝方 Player），1 = 后到的（红方 Enemy）
     Joined { index: u8 },
-    /// 房间满两人，对局开始
-    Start,
-    /// 重连时下发：对局开始到 current_tick 的全部指令日志
-    History { entries: Vec<LogEntry>, current_tick: u32 },
+    /// 房间满两人，对局开始；seed 为本局牌库洗牌种子（双方一致，逐局变化）
+    Start { seed: u32 },
+    /// 重连时下发：对局开始到 current_tick 的全部指令日志，以及本局牌库种子
+    History {
+        entries: Vec<LogEntry>,
+        current_tick: u32,
+        seed: u32,
+    },
     /// 对手掉线（其后续帧按空指令处理，对局继续）
     OpponentLeft,
     /// 对手重新连上（其真实指令包恢复到达前可能仍在追帧）
