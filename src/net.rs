@@ -82,7 +82,9 @@ pub fn connect(addr: &str, room: u32, token: u64) -> Option<NetClient> {
 
     Some(NetClient {
         my_index: u8::MAX, // 未分配
-        opponent_live: false,
+        // 开局默认对手在线：严格屏障（等不到包就停），防止开局竞态丢指令
+        // 只有收到 OpponentLeft 才放宽为空帧放行
+        opponent_live: true,
         live_resume_stamp: None,
         incoming: Mutex::new(rx_in),
         outgoing: tx_out,
@@ -95,13 +97,29 @@ pub fn receive(
     mut state: ResMut<SimState>,
     mut buffer: ResMut<CommandBuffer>,
     mut replay_log: ResMut<crate::replay::ReplayLog>,
+    mut decks: ResMut<Decks>,
     hashes: Res<OwnHashes>,
+    mut conn_dead: Local<bool>,
 ) {
     let Some(mut net) = net else { return };
-    // 先把报文全部取出（锁随作用域结束释放），再处理
+    // 先把报文全部取出（锁随作用域结束释放），并探测连接是否已断
     let msgs: Vec<ServerMsg> = {
         let incoming = net.incoming.lock().unwrap();
-        incoming.try_iter().collect()
+        let mut msgs = Vec::new();
+        loop {
+            match incoming.try_recv() {
+                Ok(m) => msgs.push(m),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if !*conn_dead {
+                        *conn_dead = true;
+                        error!("与中继的连接已断开：对局已冻结，请检查网络后重连");
+                    }
+                    break;
+                }
+            }
+        }
+        msgs
     };
     for msg in msgs {
         match msg {
@@ -109,22 +127,27 @@ pub fn receive(
                 info!("已加入房间，玩家序号 {index}（0=蓝方 1=红方）");
                 net.my_index = index;
             }
-            ServerMsg::Start => {
+            ServerMsg::Start { seed } => {
                 // 追帧中的重连客户端忽略（追完自动进 Playing）
                 if matches!(*state, SimState::Waiting) {
-                    info!("对手已就位，对局开始");
+                    info!("对手已就位，对局开始（牌库种子 {seed}）");
+                    // 用中继下发的种子洗牌：两端一致但逐局变化
+                    *decks = Decks::shuffled_with(seed);
                     *state = SimState::Playing;
                 }
             }
             ServerMsg::History {
                 entries,
                 current_tick,
+                seed,
             } => {
                 info!(
                     "收到对局日志：{} 条指令，追帧至 tick {}",
                     entries.len(),
                     current_tick
                 );
+                // 重连方是全新进程：必须先用本局种子重建牌库，再追帧
+                *decks = Decks::shuffled_with(seed);
                 let mut map = std::collections::HashMap::new();
                 for e in entries {
                     let cmds: Vec<GameCommand> =
@@ -219,7 +242,7 @@ pub fn send_hash(
     }
 
     hashes.0.insert(tick.0, h);
-    hashes.0.retain(|t, _| *t + 300 > tick.0); // 只留近期
+    hashes.0.retain(|t, _| *t + 3000 > tick.0); // 保留近期 100 秒（覆盖大延迟/追帧场景）
 
     if let Some(net) = net {
         let _ = net.outgoing.send(ClientMsg::Hash { tick: tick.0, hash: h });

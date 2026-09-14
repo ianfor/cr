@@ -84,6 +84,7 @@ fn main() {
     .init_resource::<MatchTimer>()
     .init_resource::<ReplayLog>()
     .init_resource::<ReplayControl>()
+    .init_resource::<combat::ProjectileAssets>()
     // 帧同步：固定 30Hz 模拟帧率
     .insert_resource(Time::<Fixed>::from_hz(TICKS_PER_SEC))
     .add_systems(

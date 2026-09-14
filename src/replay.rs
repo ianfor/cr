@@ -233,11 +233,11 @@ pub fn save_replay_on_game_over(
         entries,
     };
     let _ = std::fs::create_dir_all("replays");
-    let secs = std::time::SystemTime::now()
+    let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0);
-    let path = format!("replays/replay_{secs}.cr");
+    let path = format!("replays/replay_{millis}.cr");
     match bincode::serialize(&file) {
         Ok(bytes) => {
             if std::fs::write(&path, bytes).is_ok() {
@@ -285,6 +285,7 @@ mod tests {
             .init_resource::<MatchTimer>()
             .init_resource::<ReplayLog>()
             .init_resource::<ReplayControl>()
+            .init_resource::<combat::ProjectileAssets>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .add_systems(

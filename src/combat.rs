@@ -11,6 +11,7 @@ use crate::net::{self, NetClient};
 /// 输入采集（Update，渲染帧率）：点击 → 射线求交 → 生成操作指令暂存
 /// 注意：这里只表达"意图"，不碰任何模拟状态，保证帧同步确定性
 pub fn gather_input(
+    state: Res<net::SimState>,
     window: Single<&Window>,
     camera: Single<(&Camera, &GlobalTransform)>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -20,6 +21,10 @@ pub fn gather_input(
     mut pending: ResMut<PendingClicks>,
     net: Option<Res<NetClient>>,
 ) {
+    // 等待/追帧/回放/对局结束期间不采集点击（防止恢复后指令倾泻）
+    if !matches!(*state, net::SimState::Solo | net::SimState::Playing) {
+        return;
+    }
     if !mouse.just_pressed(MouseButton::Left) {
         return;
     }
@@ -172,6 +177,7 @@ pub fn monster_ai(
     mut monsters: Query<(Entity, &mut Monster, &mut Transform, &mut AttackTimer), Without<Tower>>,
     towers: Query<(Entity, &Tower, &Transform), Without<Monster>>,
     mut healths: Query<&mut Health>,
+    mut proj_assets: ResMut<ProjectileAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -251,17 +257,19 @@ pub fn monster_ai(
             if timer.0.tick(TICK_DURATION).just_finished() {
                 if monster.ranged {
                     // 远程：发射追踪子弹
+                    let (mesh, mat) = projectile_assets(
+                        &mut proj_assets,
+                        &mut meshes,
+                        &mut materials,
+                        monster.faction,
+                    );
                     commands.spawn((
                         Projectile {
                             target: target.entity,
                             damage: monster.damage,
                         },
-                        Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: faction_color(monster.faction),
-                            unlit: true,
-                            ..default()
-                        })),
+                        Mesh3d(mesh),
+                        MeshMaterial3d(mat),
                         Transform::from_translation(pos + Vec3::Y * 1.5),
                         NotShadowCaster,
                     ));
@@ -283,12 +291,43 @@ pub fn monster_ai(
     }
 }
 
+/// 子弹共享资源：mesh 和各阵营材质只建一次，避免每发子弹新建资产
+#[derive(Resource, Default)]
+pub struct ProjectileAssets {
+    mesh: Option<Handle<Mesh>>,
+    materials: [Option<Handle<StandardMaterial>>; 2],
+}
+
+fn projectile_assets(
+    assets: &mut ProjectileAssets,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    faction: Faction,
+) -> (Handle<Mesh>, Handle<StandardMaterial>) {
+    let mesh = assets
+        .mesh
+        .get_or_insert_with(|| meshes.add(Sphere::new(PROJECTILE_RADIUS)))
+        .clone();
+    let idx = faction.index() as usize;
+    let mat = assets.materials[idx]
+        .get_or_insert_with(|| {
+            materials.add(StandardMaterial {
+                base_color: faction_color(faction),
+                unlit: true,
+                ..default()
+            })
+        })
+        .clone();
+    (mesh, mat)
+}
+
 /// 塔 AI：索敌范围内有敌方怪物时，按攻击间隔从塔顶发射追踪小球
 /// 目标锁定：一旦锁定不切换，除非目标死亡（消失）或跑出攻击范围
 pub fn tower_ai(
     mut commands: Commands,
     mut towers: Query<(&mut Tower, &Transform, &mut AttackTimer)>,
     monsters: Query<(Entity, &Monster, &Transform), Without<Tower>>,
+    mut proj_assets: ResMut<ProjectileAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -330,17 +369,15 @@ pub fn tower_ai(
         };
 
         if timer.0.tick(TICK_DURATION).just_finished() {
+            let (mesh, mat) =
+                projectile_assets(&mut proj_assets, &mut meshes, &mut materials, tower.faction);
             commands.spawn((
                 Projectile {
                     target: target_entity,
                     damage: TOWER_ATTACK_DAMAGE,
                 },
-                Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: faction_color(tower.faction),
-                    unlit: true,
-                    ..default()
-                })),
+                Mesh3d(mesh),
+                MeshMaterial3d(mat),
                 Transform::from_translation(pos + Vec3::Y * 3.5),
                 NotShadowCaster,
             ));
@@ -460,7 +497,15 @@ pub fn check_game_over(
 ) {
     use crate::match_flow::MatchPhase;
 
-    if !matches!(*state, net::SimState::Solo | net::SimState::Playing) {
+    // 追帧/回放也必须判定：否则追帧会越过对局结束点继续模拟“垃圾帧”，
+    // 期间另一座国王塔可能也被打死，从而判出与真实相反的胜负
+    if !matches!(
+        *state,
+        net::SimState::Solo
+            | net::SimState::Playing
+            | net::SimState::CatchingUp
+            | net::SimState::Replaying
+    ) {
         return;
     }
 
