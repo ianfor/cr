@@ -231,11 +231,18 @@ pub fn monster_ai(
             }
         }
         // 锁定的是塔（兜底目标）时，aggro 内出现敌方怪物 → 改锁怪物
-        // 注意反向不成立：已锁定怪物后不会因塔/更近的怪而切换（防抖动）
+        // 但只在"赶路"阶段允许：已在攻击塔（交战状态）的怪绝不改目标
+        // 已锁定怪物的永不切换（防抖动）
         if let Some(e) = monster.target {
-            if snaps.iter().any(|s| s.entity == e && s.is_tower) {
-                if let Some(m) = nearest_enemy_monster(&snaps, pos, &monster, entity) {
-                    monster.target = Some(m.entity);
+            if let Some(locked) = snaps.iter().find(|s| s.entity == e) {
+                if locked.is_tower {
+                    let engaged = edge_dist(pos, monster.radius, locked.pos, locked.radius)
+                        <= monster.attack_range + 0.05;
+                    if !engaged {
+                        if let Some(m) = nearest_enemy_monster(&snaps, pos, &monster, entity) {
+                            monster.target = Some(m.entity);
+                        }
+                    }
                 }
             }
         }
@@ -908,5 +915,70 @@ mod lock_retarget_tests {
             .id();
         schedule.run(world);
         assert_eq!(world.get::<Monster>(m).unwrap().target, Some(e));
+    }
+}
+
+#[cfg(test)]
+mod engaged_lock_tests {
+    use super::*;
+
+    fn mk(faction: Faction) -> Monster {
+        Monster {
+            faction,
+            damage: 100.0,
+            attack_range: 0.75,
+            aggro_range: 5.0,
+            speed: 1.5,
+            radius: 0.5,
+            ranged: false,
+            target: None,
+        }
+    }
+
+    /// 已在攻击塔的怪（交战状态）绝不改目标，即使敌方怪物进入 aggro
+    #[test]
+    fn engaged_on_tower_never_retargets() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, 12.5),
+            ))
+            .id();
+        // 贴着塔放（已在攻击范围内）
+        let m = world
+            .spawn((
+                mk(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, 11.3),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        schedule.run(world);
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
+
+        // 敌方怪物进入 aggro：已进入攻击状态的怪不得改目标
+        world.spawn((
+            mk(Faction::Enemy),
+            Health::new(2000.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(0.0, 1.0, 9.0),
+        ));
+        schedule.run(world);
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
     }
 }
