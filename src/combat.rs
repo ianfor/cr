@@ -167,6 +167,24 @@ fn edge_dist(a_pos: Vec3, a_r: f32, b_pos: Vec3, b_r: f32) -> f32 {
     d.length() - a_r - b_r
 }
 
+/// aggro 范围内最近的敌方怪物
+fn nearest_enemy_monster<'a>(
+    snaps: &'a [UnitSnap],
+    pos: Vec3,
+    monster: &Monster,
+    self_entity: Entity,
+) -> Option<&'a UnitSnap> {
+    snaps
+        .iter()
+        .filter(|s| !s.is_tower && s.faction != monster.faction && s.entity != self_entity)
+        .filter(|s| edge_dist(pos, monster.radius, s.pos, s.radius) <= monster.aggro_range)
+        .min_by(|a, b| {
+            pos.distance_squared(a.pos)
+                .partial_cmp(&pos.distance_squared(b.pos))
+                .unwrap()
+        })
+}
+
 /// 怪物 AI（属性来自卡牌规格）：
 /// - 目标锁定：一旦锁定不切换，直到目标消失（死亡）才重新索敌
 /// - 索敌范围内有敌方怪物 → 打最近的怪；否则 → 打最近的敌塔
@@ -212,19 +230,18 @@ pub fn monster_ai(
                 monster.target = None;
             }
         }
+        // 锁定的是塔（兜底目标）时，aggro 内出现敌方怪物 → 改锁怪物
+        // 注意反向不成立：已锁定怪物后不会因塔/更近的怪而切换（防抖动）
+        if let Some(e) = monster.target {
+            if snaps.iter().any(|s| s.entity == e && s.is_tower) {
+                if let Some(m) = nearest_enemy_monster(&snaps, pos, &monster, entity) {
+                    monster.target = Some(m.entity);
+                }
+            }
+        }
         // 无锁定 → 索敌：aggro 内最近的敌方怪物；没有怪可打 → 最近的敌塔
         if monster.target.is_none() {
-            monster.target = snaps
-                .iter()
-                .filter(|s| !s.is_tower && s.faction != monster.faction && s.entity != entity)
-                .filter(|s| {
-                    edge_dist(pos, monster.radius, s.pos, s.radius) <= monster.aggro_range
-                })
-                .min_by(|a, b| {
-                    pos.distance_squared(a.pos)
-                        .partial_cmp(&pos.distance_squared(b.pos))
-                        .unwrap()
-                })
+            monster.target = nearest_enemy_monster(&snaps, pos, &monster, entity)
                 .or_else(|| {
                     snaps
                         .iter()
@@ -824,5 +841,72 @@ mod aggro_tests {
         let ha = world.get::<Health>(a).unwrap().current;
         let hb = world.get::<Health>(b).unwrap().current;
         assert!(ha < 2000.0 && hb < 2000.0, "两只怪没有互相伤害");
+    }
+}
+
+#[cfg(test)]
+mod lock_retarget_tests {
+    use super::*;
+
+    fn mk(faction: Faction) -> Monster {
+        Monster {
+            faction,
+            damage: 100.0,
+            attack_range: 0.75,
+            aggro_range: 5.0,
+            speed: 1.5,
+            radius: 0.5,
+            ranged: false,
+            target: None,
+        }
+    }
+
+    /// 锁塔的怪在敌方怪物进入 aggro 后必须改锁怪物（塔只是兜底目标）
+    #[test]
+    fn tower_locked_monster_retargets_to_enemy_monster() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, 12.5),
+            ))
+            .id();
+        let m = world
+            .spawn((
+                mk(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        schedule.run(world);
+        // 出生时无怪可打 → 锁塔
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
+
+        // 敌方怪物进入 aggro → 必须改锁怪物
+        let e = world
+            .spawn((
+                mk(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -1.0),
+            ))
+            .id();
+        schedule.run(world);
+        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(e));
     }
 }
