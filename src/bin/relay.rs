@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-use bevy_hello::constants::{INPUT_DELAY, RIVER_HALF_WIDTH, TICKS_PER_SEC};
+use bevy_hello::constants::{INPUT_DELAY, TICKS_PER_SEC};
 use bevy_hello::protocol::{read_msg, write_msg, ClientMsg, CommandWire, LogEntry, ReplayFile, ServerMsg};
 
 /// 双方都离线后房间保留时长（超时清房）
@@ -301,17 +301,13 @@ fn handle_client(mut stream: TcpStream, rooms: Rooms) {
                         seat.last_stamp = seat.last_stamp.max(tick);
                     }
                     // 服务端权威校验：防改版客户端作弊
-                    // 阵营强制为发送方；坐标钳制到发送方半场
+                    // 阵营强制为发送方；坐标只做粗边界钳制——
+                    // 精细部署区域规则（公主塔侧区）由两端 play_card 一致判定
                     for c in &mut cmds {
                         let CommandWire::Deploy { faction, x, z, .. } = c;
                         *faction = my_index;
                         *x = x.clamp(-8.0, 8.0);
-                        let (lo, hi) = if my_index == 0 {
-                            (-14.0, -RIVER_HALF_WIDTH)
-                        } else {
-                            (RIVER_HALF_WIDTH, 14.0)
-                        };
-                        *z = z.clamp(lo, hi);
+                        *z = z.clamp(-14.0, 14.0);
                     }
                     // 指令日志只记非空帧（空帧是屏障心跳，追帧时隐式处理）
                     if !cmds.is_empty() {

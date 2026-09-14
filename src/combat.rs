@@ -18,6 +18,7 @@ pub fn gather_input(
     decks: Res<Decks>,
     selected: Res<SelectedCard>,
     buttons: Query<&Interaction, With<Button>>,
+    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
     mut pending: ResMut<PendingClicks>,
     net: Option<Res<NetClient>>,
 ) {
@@ -48,17 +49,18 @@ pub fn gather_input(
     point.z = point.z.clamp(-14.0, 14.0);
 
     let faction = match net.as_ref() {
-        // 联网：阵营由服务器序号决定，且只能点自己半场（河道不算）
+        // 联网：阵营由服务器序号决定；部署区域按 CR 规则校验
+        // （自己半场任意；推掉敌侧公主塔后可在该侧敌半场下怪）
         Some(n) => {
             let Some(f) = Faction::from_index(n.my_index) else {
                 return; // 还没分配到序号（观战/等待中）
             };
-            let own_half = match f {
-                Faction::Player => point.z <= -RIVER_HALF_WIDTH,
-                Faction::Enemy => point.z >= RIVER_HALF_WIDTH,
-            };
-            if !own_half {
-                return; // 点在对面半场：无效操作
+            let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
+                .iter()
+                .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+                .collect();
+            if !cards::deploy_allowed(f, point, &tower_snaps) {
+                return; // 区域不可部署：无效操作
             }
             f
         }
@@ -115,7 +117,14 @@ pub fn apply_commands(
     mut log: ResMut<CommandLog>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
 ) {
+    // 部署区域判定用的塔快照（faction, is_king, pos）
+    let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
+        .iter()
+        .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+        .collect();
+
     let mut exec: Vec<GameCommand> = buffer.local.remove(&tick.0).unwrap_or_default();
     exec.extend(buffer.remote.remove(&tick.0).unwrap_or_default());
     // 稳定排序：蓝方指令先执行，同阵营保持发送顺序
@@ -141,6 +150,7 @@ pub fn apply_commands(
                 faction,
                 card,
                 Vec3::new(x, 0.0, z),
+                &tower_snaps,
             ),
         }
     }

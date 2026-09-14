@@ -77,7 +77,29 @@ fn unit_color(faction: Faction, spec: &MonsterSpec) -> Color {
     }
 }
 
-/// 出牌（帧同步链内执行）：校验手牌与费用 → 扣费 → 牌循环 → 出兵
+/// 部署区域判定（CR 规则，帧同步两端各自判定结果一致）：
+/// - 自己半场（不含河道）：任意部署
+/// - 敌方半场：仅限该侧（左/右）公主塔已被推掉的区域
+/// towers: (faction, is_king, pos) 快照
+pub fn deploy_allowed(faction: Faction, pos: Vec3, towers: &[(Faction, bool, Vec3)]) -> bool {
+    let own_sign = match faction {
+        Faction::Player => -1.0,
+        Faction::Enemy => 1.0,
+    };
+    if pos.z.abs() < RIVER_HALF_WIDTH {
+        return false; // 河道不可部署
+    }
+    if pos.z.signum() == own_sign {
+        return true; // 自己半场
+    }
+    // 敌方半场：该侧公主塔必须已被推掉
+    let side_left = pos.x < 0.0;
+    !towers
+        .iter()
+        .any(|(f, is_king, t)| *f != faction && !*is_king && (t.x < 0.0) == side_left)
+}
+
+/// 出牌（帧同步链内执行）：校验部署区域、手牌与费用 → 扣费 → 牌循环 → 出兵
 /// 任何一步不满足都丢弃指令（两端状态一致，判定结果必然相同）
 #[allow(clippy::too_many_arguments)]
 pub fn play_card(
@@ -89,7 +111,12 @@ pub fn play_card(
     faction: Faction,
     card_id: u8,
     pos: Vec3,
+    towers: &[(Faction, bool, Vec3)],
 ) {
+    // 部署区域权威校验（防改版客户端在区域外下怪；两端判定一致）
+    if !deploy_allowed(faction, pos, towers) {
+        return;
+    }
     let Some(spec) = CARDS.iter().find(|c| c.id == card_id) else {
         return;
     };
@@ -334,5 +361,93 @@ mod tests {
         let spawned: Vec<&Monster> = monsters.iter(world).collect();
         assert_eq!(spawned.len(), spec.count as usize);
         assert_eq!(spawned[0].damage, spec.monster.damage);
+    }
+}
+
+#[cfg(test)]
+mod zone_tests {
+    use super::*;
+
+    fn princess(faction: Faction, x: f32, z: f32) -> (Faction, bool, Vec3) {
+        (faction, false, Vec3::new(x, 0.0, z))
+    }
+
+    /// CR 部署区域规则：推掉哪侧公主塔，开放哪侧敌半场
+    #[test]
+    fn deploy_zone_expands_after_princess_falls() {
+        // 敌方左塔活着、右塔已掉（快照里没有右塔）
+        let towers = vec![
+            princess(Faction::Enemy, -6.5, 8.5),  // 左公主塔（活）
+            princess(Faction::Enemy, 0.0, 12.5),  // 占位：实际国王塔是 is_king，不影响
+        ];
+        // 把第二座标记为国王塔
+        let towers: Vec<(Faction, bool, Vec3)> = vec![
+            (Faction::Enemy, false, Vec3::new(-6.5, 0.0, 8.5)),
+            (Faction::Enemy, true, Vec3::new(0.0, 0.0, 12.5)),
+        ];
+
+        // 自己半场：任意可下
+        assert!(deploy_allowed(Faction::Player, Vec3::new(-2.0, 0.0, -5.0), &towers));
+        assert!(deploy_allowed(Faction::Player, Vec3::new(2.0, 0.0, -5.0), &towers));
+        // 河道：不可下
+        assert!(!deploy_allowed(Faction::Player, Vec3::new(0.0, 0.0, 0.0), &towers));
+        // 敌半场左侧（左塔活着）：不可下
+        assert!(!deploy_allowed(Faction::Player, Vec3::new(-2.0, 0.0, 5.0), &towers));
+        // 敌半场右侧（右塔已掉）：可下
+        assert!(deploy_allowed(Faction::Player, Vec3::new(2.0, 0.0, 5.0), &towers));
+        // 红方镜像
+        assert!(!deploy_allowed(Faction::Enemy, Vec3::new(0.0, 0.0, 0.0), &towers));
+        assert!(deploy_allowed(Faction::Enemy, Vec3::new(2.0, 0.0, -5.0), &towers));
+    }
+
+    /// 端到端：区域外部署指令被 play_card 丢弃（不出兵、不扣费）
+    #[test]
+    fn play_card_rejects_out_of_zone_deploy() {
+        let mut app = App::new();
+        app.insert_resource(Elixir {
+            player: ELIXIR_START,
+            enemy: ELIXIR_START,
+        });
+        app.insert_resource(Decks::shuffled());
+        app.init_resource::<Tick>();
+        app.init_resource::<CommandBuffer>();
+        app.init_resource::<CommandLog>();
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+
+        // 敌方左公主塔活着
+        app.world_mut().spawn((
+            Tower {
+                faction: Faction::Enemy,
+                radius: 1.0,
+                attack_range: 8.0,
+                target: None,
+            },
+            Health::new(6000.0),
+            Transform::from_xyz(-6.5, 0.0, 8.5),
+        ));
+
+        let card_id = app.world().resource::<Decks>().player[0];
+        app.world_mut().resource_mut::<CommandBuffer>().local.insert(
+            0,
+            vec![GameCommand::Deploy {
+                faction: Faction::Player,
+                card: card_id,
+                x: -2.0,
+                z: 5.0, // 敌半场左侧：左塔还在，不可部署
+            }],
+        );
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(crate::combat::apply_commands);
+        schedule.run(app.world_mut());
+
+        assert_eq!(
+            app.world().resource::<Elixir>().player,
+            ELIXIR_START,
+            "区域外部署不应扣费"
+        );
+        let mut q = app.world_mut().query::<&Monster>();
+        assert_eq!(q.iter(app.world()).count(), 0, "区域外部署不应出兵");
     }
 }
