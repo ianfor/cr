@@ -66,7 +66,7 @@ pub fn setup(
 /// 单机模式（两方都可下）不显示
 pub fn update(
     net: Option<Res<NetClient>>,
-    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Tower, &Transform, Option<&KingTower>), Without<DeployZone>>,
     mut zones: Query<(&DeployZone, &mut Transform, &mut Visibility)>,
 ) {
     let Some(my) = net.and_then(|n| Faction::from_index(n.my_index)) else {
