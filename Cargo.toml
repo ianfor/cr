@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.19"
+# 精简特性：只要 3D + UI，砍掉 audio/gltf/动画/纹理编解码（本项目都没用）
+# 注：dynamic_linking 在 Windows 受 PE 65535 导出符号上限无法使用，勿开
+bevy = { version = "0.19", default-features = false, features = ["3d", "ui"] }
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"
