@@ -79,7 +79,8 @@ fn unit_color(faction: Faction, spec: &MonsterSpec) -> Color {
 
 /// 部署区域判定（CR 规则，帧同步两端各自判定结果一致）：
 /// - 自己半场（不含河道）：任意部署
-/// - 敌方半场：仅限该侧（左/右）公主塔已被推掉的区域
+/// - 敌方半场：仅限该侧（左/右）公主塔已被推掉的区域，
+///   且纵深不超过公主塔原来的位置（|z| <= PRINCESS_Z）
 /// towers: (faction, is_king, pos) 快照
 pub fn deploy_allowed(faction: Faction, pos: Vec3, towers: &[(Faction, bool, Vec3)]) -> bool {
     let own_sign = match faction {
@@ -91,6 +92,10 @@ pub fn deploy_allowed(faction: Faction, pos: Vec3, towers: &[(Faction, bool, Vec
     }
     if pos.z.signum() == own_sign {
         return true; // 自己半场
+    }
+    // 敌方半场：纵深不得超过公主塔原位
+    if pos.z.abs() > PRINCESS_Z {
+        return false;
     }
     // 敌方半场：该侧公主塔必须已被推掉
     let side_left = pos.x < 0.0;
@@ -395,6 +400,8 @@ mod zone_tests {
         assert!(!deploy_allowed(Faction::Player, Vec3::new(-2.0, 0.0, 5.0), &towers));
         // 敌半场右侧（右塔已掉）：可下
         assert!(deploy_allowed(Faction::Player, Vec3::new(2.0, 0.0, 5.0), &towers));
+        // 敌半场右侧但纵深超过公主塔原位（8.5）：不可下
+        assert!(!deploy_allowed(Faction::Player, Vec3::new(2.0, 0.0, 10.0), &towers));
         // 红方镜像
         assert!(!deploy_allowed(Faction::Enemy, Vec3::new(0.0, 0.0, 0.0), &towers));
         assert!(deploy_allowed(Faction::Enemy, Vec3::new(2.0, 0.0, -5.0), &towers));

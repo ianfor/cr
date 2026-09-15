@@ -131,7 +131,7 @@ pub fn setup(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
-                Vec3::new(x, 0.0, sign * 8.5),
+                Vec3::new(x, 0.0, sign * PRINCESS_Z),
                 faction,
                 &PRINCESS_TOWER,
             );

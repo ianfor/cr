@@ -47,6 +47,8 @@ pub const RIVER_HALF_WIDTH: f32 = 1.25;
 pub const TOWER_Z: f32 = 12.5;
 /// 公主塔横向位置（靠边，两座公主塔拉开距离，射程互不覆盖）
 pub const PRINCESS_X: f32 = 6.5;
+/// 公主塔纵向位置（也是推塔后部署扩张区的纵深上限）
+pub const PRINCESS_Z: f32 = 8.5;
 
 // 战斗常量
 pub const TOWER_HP: f32 = 10000.0;
