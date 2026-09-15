@@ -33,13 +33,13 @@ pub fn setup(
 ) {
     let plane = meshes.add(Plane3d::default().mesh().size(1.0, 1.0));
     let green = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.2, 0.85, 0.35, 0.22),
+        base_color: Color::srgba(0.2, 0.85, 0.35, 0.3),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
     });
     let red = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.9, 0.2, 0.2, 0.15),
+        base_color: Color::srgba(0.9, 0.2, 0.2, 0.22),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -63,12 +63,29 @@ pub fn setup(
 }
 
 /// 每帧按本方阵营与塔存活状态刷新区域显示
-/// 单机模式（两方都可下）不显示
 pub fn update(
     net: Option<Res<NetClient>>,
     towers: Query<(&Tower, &Transform, Option<&KingTower>), Without<DeployZone>>,
     mut zones: Query<(&DeployZone, &mut Transform, &mut Visibility)>,
 ) {
+    let half_depth = 14.0 - RIVER_HALF_WIDTH;
+
+    // 单机模式：点哪边半场就属于哪方，所以两半都可下（绿），只有河道不可下（红）
+    if net.is_none() {
+        for (zone, mut transform, mut vis) in &mut zones {
+            let (cx, cz, w, d) = match zone.kind {
+                ZoneKind::OwnHalf => (0.0, -(RIVER_HALF_WIDTH + 14.0) / 2.0, 16.0, half_depth),
+                ZoneKind::ExpandLeft => (-4.0, (RIVER_HALF_WIDTH + 14.0) / 2.0, 8.0, half_depth),
+                ZoneKind::ExpandRight => (4.0, (RIVER_HALF_WIDTH + 14.0) / 2.0, 8.0, half_depth),
+                ZoneKind::EnemyBlocked => (0.0, 0.0, 18.0, RIVER_HALF_WIDTH * 2.0),
+            };
+            let y = transform.translation.y;
+            *transform = Transform::from_xyz(cx, y, cz).with_scale(Vec3::new(w, 1.0, d));
+            *vis = Visibility::Visible;
+        }
+        return;
+    }
+
     let Some(my) = net.and_then(|n| Faction::from_index(n.my_index)) else {
         for (_, _, mut vis) in &mut zones {
             *vis = Visibility::Hidden;
@@ -90,7 +107,6 @@ pub fn update(
     let expand_right = !princess_alive(1.0);
 
     // 矩形：(center_x, center_z, width, depth)
-    let half_depth = 14.0 - RIVER_HALF_WIDTH;
     let own = (
         0.0,
         sign * (RIVER_HALF_WIDTH + 14.0) / 2.0,
