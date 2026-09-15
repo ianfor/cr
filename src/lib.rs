@@ -3,6 +3,7 @@ pub mod cards;
 pub mod combat;
 pub mod components;
 pub mod constants;
+pub mod deploy_zone;
 pub mod elixir;
 pub mod health_bar;
 pub mod match_flow;

@@ -6,7 +6,7 @@ use bevy_hello::constants::{ELIXIR_START, TICKS_PER_SEC};
 use bevy_hello::match_flow::MatchTimer;
 use bevy_hello::net::{OwnHashes, SimState};
 use bevy_hello::replay::{ReplayControl, ReplayLog, ReplayMode, SimTick};
-use bevy_hello::{arena, cards, combat, elixir, health_bar, match_flow, net, replay};
+use bevy_hello::{arena, cards, combat, deploy_zone, elixir, health_bar, match_flow, net, replay};
 
 /// 玩家身份 token：持久化到 player_token.txt，断线重连凭它认领座位
 /// 同机开多个客户端测试时用 PLAYER_TOKEN 环境变量区分
@@ -89,7 +89,13 @@ fn main() {
     .insert_resource(Time::<Fixed>::from_hz(TICKS_PER_SEC))
     .add_systems(
         Startup,
-        (arena::setup, elixir::setup_ui, match_flow::setup_timer_ui, cards::setup_ui),
+        (
+            arena::setup,
+            elixir::setup_ui,
+            match_flow::setup_timer_ui,
+            cards::setup_ui,
+            deploy_zone::setup,
+        ),
     )
     // 输入采集与网络收发（渲染帧率）
     .add_systems(Update, combat::gather_input)
@@ -123,7 +129,7 @@ fn main() {
     )
     .add_systems(FixedUpdate, replay::drive_sim)
     .add_systems(Update, replay::drive_replay)
-    // 表现层（渲染帧率）：血条、圣水 UI、卡牌 UI、倒计时、结算特效
+    // 表现层（渲染帧率）：血条、圣水 UI、卡牌 UI、部署区域、倒计时、结算特效
     .add_systems(
         Update,
         (
@@ -131,6 +137,7 @@ fn main() {
             health_bar::update,
             elixir::update_ui,
             cards::update_card_ui,
+            deploy_zone::update,
             match_flow::update_countdown,
             match_flow::result_pop,
             match_flow::fireworks_spawn,
