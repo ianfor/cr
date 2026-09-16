@@ -18,20 +18,38 @@ GATE_EPISODES = 60
 GATE_THRESHOLD = 0.55
 
 
-class MixedOpponentCallback(BaseCallback):
-    """每 freq 步重掷一次对手池（70% 锚点 / 30% 随机）"""
+class AnnealedOpponentCallback(BaseCallback):
+    """对手退火：先多打随机练基本功，再逐步加重锚点比例
+    （冷启动模型开局太弱，70% 锚点会把基础打崩——gen2 的教训）"""
 
-    def __init__(self, env, mixer, freq=16384):
+    # (步数阈值, 锚点概率)
+    SCHEDULE = [
+        (0, 0.2),
+        (150_000, 0.5),
+        (300_000, 0.7),
+    ]
+
+    def __init__(self, env, anchor, check_freq=8192):
         super().__init__()
         self.env = env
-        self.mixer = mixer
-        self.freq = freq
-        self._next = freq
+        self.anchor = anchor
+        self.check_freq = check_freq
+        self._next = check_freq
+
+    def _anchor_prob(self, steps):
+        p = self.SCHEDULE[0][1]
+        for threshold, prob in self.SCHEDULE:
+            if steps >= threshold:
+                p = prob
+        return p
 
     def _on_step(self):
         if self.num_timesteps >= self._next:
-            self.mixer(self.env)
-            self._next += self.freq
+            if np.random.rand() < self._anchor_prob(self.num_timesteps):
+                self.env.set_opponent(self.anchor)
+            else:
+                self.env.set_opponent(None)  # 随机对手
+            self._next += self.check_freq
         return True
 
 
@@ -75,8 +93,6 @@ def main():
 
     prev = MaskablePPO.load(prev_path)
     env = ActionMasker(SelfPlayEnv(), mask_fn)
-    mixer = MixedOpponent(prev)
-    mixer(env.unwrapped)
 
     if fresh:
         # exploiter 从随机权重冷启动打冻结池（联盟标准做法，避免热启动漂移）
@@ -97,7 +113,7 @@ def main():
     t0 = time.time()
     model.learn(
         total_timesteps=total,
-        callback=MixedOpponentCallback(env.unwrapped, mixer),
+        callback=AnnealedOpponentCallback(env.unwrapped, prev),
     )
     secs = time.time() - t0
 
