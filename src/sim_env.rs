@@ -46,6 +46,8 @@ pub struct SimWorld {
     tower_hp: [f32; 2],
     /// 当局步数（防异常长局）
     steps: u32,
+    /// 训练用短局时长（None = 正式 3 分钟）
+    regular_ticks: Option<u32>,
 }
 
 impl Default for SimWorld {
@@ -100,9 +102,16 @@ impl SimWorld {
             app,
             tower_hp: [0.0; 2],
             steps: 0,
+            regular_ticks: None,
         };
         w.reset(0);
         w
+    }
+
+    /// 训练用短局（如 90 秒）：单局更短，单位步数内样本更多、信用分配更容易
+    pub fn with_regular_ticks(mut self, ticks: u32) -> Self {
+        self.regular_ticks = Some(ticks);
+        self
     }
 
     /// 重置对局：deck_seed 驱动洗牌（训练时每局变化，评估时固定）
@@ -111,6 +120,9 @@ impl SimWorld {
         *self.app.world_mut().resource_mut::<Decks>() = Decks::shuffled_with(deck_seed);
         // reset_world 不清对局状态，上一局的 GameOver 必须手动复位
         *self.app.world_mut().resource_mut::<SimState>() = SimState::Solo;
+        if let Some(t) = self.regular_ticks {
+            self.app.world_mut().resource_mut::<MatchTimer>().ticks_left = t;
+        }
         self.tower_hp = self.tower_hp_sums();
         self.steps = 0;
         self.obs()
@@ -120,6 +132,7 @@ impl SimWorld {
     pub fn step(&mut self, blue: Option<EnvAction>, red: Option<EnvAction>) -> StepResult {
         self.steps += 1;
         let tick = self.app.world().resource::<Tick>().0 + 1;
+        let log_before = self.app.world().resource::<CommandLog>().0.len();
         for (faction, act) in [(Faction::Player, blue), (Faction::Enemy, red)] {
             if let Some(a) = act {
                 if let Some(cmd) = self.action_to_command(faction, a) {
@@ -136,6 +149,7 @@ impl SimWorld {
 
         // 推进到下一决策点（或提前结束）
         let end_tick = tick + STEP_TICKS - 1;
+        let monsters_before = self.count_monsters();
         loop {
             let state = *self.app.world().resource::<SimState>();
             if matches!(state, SimState::GameOver(_)) {
@@ -147,10 +161,38 @@ impl SimWorld {
             }
         }
 
-        // 奖励：塔血差 shaping + 终局胜负
+        // 奖励：塔血差 shaping + 终局胜负 + 圣水使用引导 + 击杀交换
         let now = self.tower_hp_sums();
         let mut reward = (self.tower_hp[1] - now[1] - (self.tower_hp[0] - now[0])) * 0.0002;
         self.tower_hp = now;
+
+        // 出牌激励：本步内蓝方实际执行的指令数（被 play_card 接受的）
+        let log = &self.app.world().resource::<CommandLog>().0;
+        let deployed_blue = log[log_before..]
+            .iter()
+            .filter(|(_, c)| matches!(c, GameCommand::Deploy { faction: Faction::Player, .. }))
+            .count();
+        reward += deployed_blue as f32 * 0.02;
+        // 囤水惩罚：圣水满着不用就是浪费
+        if self.app.world().resource::<Elixir>().player >= ELIXIR_MAX - 1e-6 {
+            reward -= 0.005;
+        }
+        // 击杀交换 shaping：本步双方阵亡数差（击杀密度是这场游戏最重要的局部信号）
+        let after = self.count_monsters();
+        let log = &self.app.world().resource::<CommandLog>().0;
+        let spawned_red = log[log_before..]
+            .iter()
+            .filter(|(_, c)| matches!(c, GameCommand::Deploy { faction: Faction::Enemy, .. }))
+            .count();
+        let spawned_blue = log[log_before..]
+            .iter()
+            .filter(|(_, c)| matches!(c, GameCommand::Deploy { faction: Faction::Player, .. }))
+            .count();
+        let red_deaths =
+            (monsters_before[1] + spawned_red).saturating_sub(after[1]) as f32;
+        let blue_deaths =
+            (monsters_before[0] + spawned_blue).saturating_sub(after[0]) as f32;
+        reward += (red_deaths - blue_deaths) * 0.01;
         let (done, winner) = match *self.app.world().resource::<SimState>() {
             SimState::GameOver(w) => (true, w),
             // 兜底：异常长局强制结束（理论上计时系统会终结对局）
@@ -181,6 +223,16 @@ impl SimWorld {
             x: a.x,
             z: a.z,
         })
+    }
+
+    /// 双方场上怪物数量 [blue, red]
+    fn count_monsters(&mut self) -> [usize; 2] {
+        let mut counts = [0usize; 2];
+        let mut q = self.app.world_mut().query::<&Monster>();
+        for m in q.iter(self.app.world()) {
+            counts[m.faction.index() as usize] += 1;
+        }
+        counts
     }
 
     fn tower_hp_sums(&mut self) -> [f32; 2] {

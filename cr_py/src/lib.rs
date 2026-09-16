@@ -60,6 +60,14 @@ impl CrEnv {
         }
     }
 
+    /// 训练用短局版本（ticks 为常规时长，如 2700 = 90 秒）
+    #[staticmethod]
+    fn short(ticks: u32) -> Self {
+        Self {
+            world: SimWorld::new().with_regular_ticks(ticks),
+        }
+    }
+
     #[getter]
     fn obs_size(&self) -> usize {
         OBS_SIZE

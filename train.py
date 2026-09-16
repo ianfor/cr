@@ -25,7 +25,8 @@ class SelfPlayEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
-        self.inner = cr_py.CrEnv()
+        # 训练用 90 秒短局：单位步数内样本更多、信用分配更容易
+        self.inner = cr_py.CrEnv.short(2700)
         self.observation_space = gym.spaces.Box(-2.0, 2.0, shape=(OBS_SIZE,), dtype=np.float32)
         self.action_space = gym.spaces.Discrete(N_ACTIONS)
         self.opp_model = None
@@ -111,17 +112,15 @@ def main():
         batch_size=256,
         learning_rate=3e-4,
         gamma=0.995,
-        ent_coef=0.01,
+        ent_coef=0.02,
         policy_kwargs=dict(net_arch=[128, 128]),
         verbose=0,
         device="cpu",
     )
 
     t0 = time.time()
-    model.learn(
-        total_timesteps=total,
-        callback=OpponentUpdateCallback(env.unwrapped),
-    )
+    # 课程阶段 1：全程打随机对手，先把"赢随机"学会，再谈自我对弈
+    model.learn(total_timesteps=total)
     secs = time.time() - t0
 
     wr = evaluate(model)
