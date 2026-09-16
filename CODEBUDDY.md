@@ -52,6 +52,7 @@ REPLAY=replays/xxx.cr cargo run         # 录像回放模式（空格暂停，1/
 2. **禁止随机数和非确定性遍历**：洗牌等用 `cards.rs` 里的位运算 `prand`（固定种子，牌库种子由 relay 在 Start 下发）；需要随机感的纯视觉表现可以用 sin/cos（它们在模拟外）
 3. **输入只能走指令流**：点击 → `gather_input`（Update，只产生 `GameCommand` 放入 `PendingClicks`，不碰模拟状态）→ `collect_inputs`（打 `T+INPUT_DELAY` 帧号入 `CommandBuffer` 并发给对手）→ `apply_commands`（帧边界统一执行）。**权威校验（费用/手牌/部署区域）必须放在执行侧**（`play_card`），两端用同一模拟状态判定，结果必然一致；采集侧的校验只是体验优化
 4. 模拟状态的实体顺序、指令执行顺序（`apply_commands` 里按阵营序号稳定排序）必须两端一致
+5. **任何影响模拟的改动（数值/AI/地图/洗牌/帧率）必须给 `SIM_VERSION`（`constants.rs`）+1**——录像回放靠它校验版本，不匹配会警告结果失真
 
 ### 屏障与断线处理（net.rs / relay.rs）
 
