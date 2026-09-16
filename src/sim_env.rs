@@ -248,6 +248,32 @@ impl SimWorld {
     pub fn tick(&self) -> u32 {
         self.app.world().resource::<Tick>().0
     }
+
+    /// 某方手牌槽位对应的卡 id（动作掩码用）
+    pub fn hand_card(&self, faction: Faction, slot: usize) -> Option<u8> {
+        let decks = self.app.world().resource::<Decks>();
+        decks.queue(faction).get(slot).copied()
+    }
+
+    /// 某方当前圣水（动作掩码用）
+    pub fn elixir(&self, faction: Faction) -> f32 {
+        let e = self.app.world().resource::<Elixir>();
+        match faction {
+            Faction::Player => e.player,
+            Faction::Enemy => e.enemy,
+        }
+    }
+
+    /// 塔快照 (faction, is_king, pos)（部署区域判定用）
+    pub fn tower_snaps(&mut self) -> Vec<(Faction, bool, Vec3)> {
+        let mut q = self
+            .app
+            .world_mut()
+            .query::<(&Tower, &Transform, Option<&KingTower>)>();
+        q.iter(self.app.world())
+            .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+            .collect()
+    }
 }
 
 #[cfg(test)]

@@ -3,6 +3,9 @@ name = "bevy_hello"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["cr_py"]
+
 [dependencies]
 # 精简特性：只要 3D + UI，砍掉 audio/gltf/动画/纹理编解码（本项目都没用）
 # 注：dynamic_linking 在 Windows 受 PE 65535 导出符号上限无法使用，勿开

@@ -6,3 +6,8 @@ player_token.txt
 
 # 参考图片等本地文件
 /*.png
+
+# Python 训练环境
+/.venv
+/models
+__pycache__
