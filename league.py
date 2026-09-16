@@ -14,7 +14,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from train import SelfPlayEnv, mask_fn, evaluate
 
 MODEL_DIR = Path("models")
-GATE_EPISODES = 40
+GATE_EPISODES = 60
 GATE_THRESHOLD = 0.55
 
 
@@ -106,12 +106,13 @@ def main():
     print(f"train {total} steps in {secs:.0f}s ({total/secs:.0f} steps/s)")
     print(f"vs random: {wr_random:.0%}   vs prev: {wr_prev:.0%}")
 
+    # 无条件存档（门控只决定"是否当新师傅"，不再丢模型）
+    path = MODEL_DIR / f"cand_r{wr_random:.2f}_p{wr_prev:.2f}.zip"
+    model.save(path)
     if wr_prev >= GATE_THRESHOLD:
-        path = MODEL_DIR / f"gen_next_wr{wr_prev:.2f}.zip"
-        model.save(path)
-        print(f"GATE PASSED, new generation saved: {path}")
+        print(f"GATE PASSED, new anchor: {path}")
     else:
-        print(f"gate failed ({wr_prev:.0%} < {GATE_THRESHOLD:.0%}), generation discarded")
+        print(f"gate not passed ({wr_prev:.0%} < {GATE_THRESHOLD:.0%}), model kept at {path}")
 
 
 if __name__ == "__main__":
