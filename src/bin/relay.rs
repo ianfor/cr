@@ -53,7 +53,7 @@ fn save_replay(room: u32, room_state: &mut Room, end_tick: u32, tag: &str) {
     }
     room_state.saved = true;
     let file = ReplayFile {
-        version: 1,
+        version: bevy_hello::constants::SIM_VERSION,
         end_tick,
         entries: room_state.log.clone(),
     };

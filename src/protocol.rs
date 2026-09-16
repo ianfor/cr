@@ -31,6 +31,8 @@ pub struct LogEntry {
 /// 录像文件格式
 #[derive(Serialize, Deserialize)]
 pub struct ReplayFile {
+    /// 模拟版本（constants.rs 的 SIM_VERSION）：格式变更或模拟行为变更时递增
+    /// 回放端版本不一致时结果不保证正确
     pub version: u32,
     /// 对局结束时的帧号
     pub end_tick: u32,

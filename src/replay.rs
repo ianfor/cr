@@ -228,7 +228,7 @@ pub fn save_replay_on_game_over(
         })
         .collect();
     let file = ReplayFile {
-        version: 1,
+        version: SIM_VERSION,
         end_tick: tick.0,
         entries,
     };
@@ -249,9 +249,16 @@ pub fn save_replay_on_game_over(
 }
 
 /// 加载录像文件 → 追帧数据源
+/// 版本不匹配的录像仍然加载，但明确警告结果可能失真
 pub fn load_replay_file(path: &str) -> Option<ReplayLog> {
     let bytes = std::fs::read(path).ok()?;
     let file: ReplayFile = bincode::deserialize(&bytes).ok()?;
+    if file.version != SIM_VERSION {
+        eprintln!(
+            "警告：录像版本不匹配（文件 v{}，当前模拟 v{}），回放结果可能失真！",
+            file.version, SIM_VERSION
+        );
+    }
     let mut map = HashMap::new();
     for e in file.entries {
         let cmds: Vec<GameCommand> = e.cmds.into_iter().filter_map(wire_to_command).collect();
