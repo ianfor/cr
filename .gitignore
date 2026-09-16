@@ -3,3 +3,6 @@
 /tools/cache
 player_token.txt
 .codebuddy
+
+# 参考图片等本地文件
+/*.png
