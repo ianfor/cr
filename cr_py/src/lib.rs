@@ -83,6 +83,16 @@ impl CrEnv {
         self.world.reset(seed)
     }
 
+    /// 指定阵营视角的观测（自我对弈时红方对手用它，而不是蓝方视角）
+    fn obs_for(&mut self, faction: u8) -> Vec<f32> {
+        let faction = if faction == 0 {
+            Faction::Player
+        } else {
+            Faction::Enemy
+        };
+        self.world.obs_for(faction)
+    }
+
     /// 双方动作索引 → (obs, reward, done, winner)
     /// winner: 1=蓝(Player) -1=红(Enemy) 0=平/未结束
     fn step(&mut self, blue_action: usize, red_action: usize) -> (Vec<f32>, f32, bool, i8) {

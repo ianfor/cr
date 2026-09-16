@@ -247,20 +247,41 @@ impl SimWorld {
         sums
     }
 
-    /// 蓝方视角定长观测向量（红方训练时用镜像坐标即可）
+    /// 蓝方视角定长观测向量
     pub fn obs(&mut self) -> Vec<f32> {
+        self.obs_impl(false)
+    }
+
+    /// 指定阵营视角的观测（自我对弈用）：
+    /// 红方视角 = 圣水/手牌换成自己的、塔序己方在前、全场 180° 旋转
+    pub fn obs_for(&mut self, faction: Faction) -> Vec<f32> {
+        self.obs_impl(faction == Faction::Enemy)
+    }
+
+    fn obs_impl(&mut self, flip: bool) -> Vec<f32> {
         let mut v = vec![0.0f32; OBS_SIZE];
         let world = self.app.world_mut();
 
         let elixir = world.resource::<Elixir>();
-        v[0] = elixir.player / ELIXIR_MAX;
-        v[1] = elixir.enemy / ELIXIR_MAX;
+        let (own_e, opp_e) = if flip {
+            (elixir.enemy, elixir.player)
+        } else {
+            (elixir.player, elixir.enemy)
+        };
+        v[0] = own_e / ELIXIR_MAX;
+        v[1] = opp_e / ELIXIR_MAX;
 
+        let own_faction = if flip {
+            Faction::Enemy
+        } else {
+            Faction::Player
+        };
         let decks = world.resource::<Decks>();
-        for (i, c) in decks.player.iter().take(HAND_SIZE).enumerate() {
+        let queue = decks.queue(own_faction);
+        for (i, c) in queue.iter().take(HAND_SIZE).enumerate() {
             v[2 + i] = *c as f32 / (CARDS.len() - 1) as f32;
         }
-        v[6] = decks.player[HAND_SIZE] as f32 / (CARDS.len() - 1) as f32;
+        v[6] = queue[HAND_SIZE] as f32 / (CARDS.len() - 1) as f32;
 
         let timer = world.resource::<MatchTimer>();
         v[7] = (timer.phase == MatchPhase::Regular) as u8 as f32;
@@ -268,29 +289,39 @@ impl SimWorld {
         v[9] = (timer.phase == MatchPhase::Drain) as u8 as f32;
         v[10] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
 
-        // 塔血：蓝王/蓝左/蓝右/红王/红左/红右（hp/max，死亡为 0）
+        // 塔血：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
         {
             let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
             for (t, h, k, tr) in q.iter(world) {
-                let side = match (t.faction, k.is_some()) {
-                    (Faction::Player, true) => 0,
-                    (Faction::Player, false) => 1 + (tr.translation.x > 0.0) as usize,
-                    (Faction::Enemy, true) => 3,
-                    (Faction::Enemy, false) => 4 + (tr.translation.x > 0.0) as usize,
+                let same_side = t.faction == own_faction;
+                let mut x = tr.translation.x;
+                if flip {
+                    x = -x;
+                }
+                let side = match (same_side, k.is_some()) {
+                    (true, true) => 0,
+                    (true, false) => 1 + (x > 0.0) as usize,
+                    (false, true) => 3,
+                    (false, false) => 4 + (x > 0.0) as usize,
                 };
                 v[11 + side] = (h.current / h.max).clamp(0.0, 1.0);
             }
         }
 
-        // 单位：按生成顺序取前 MAX_OBS_UNITS 个
+        // 单位：flip 时阵营标签互换、坐标 180° 旋转
         {
             let mut q = world.query::<(&Monster, &Health, &Transform)>();
             for (i, (m, h, tr)) in q.iter(world).take(MAX_OBS_UNITS).enumerate() {
                 let base = 17 + i * 5;
-                v[base] = m.faction.index() as f32;
-                v[base + 1] = m.damage / 200.0; // 用伤害近似卡种区分度
-                v[base + 2] = tr.translation.x / 9.0;
-                v[base + 3] = tr.translation.z / 15.0;
+                let (fac, mut x, mut z) = (m.faction.index() as f32, tr.translation.x, tr.translation.z);
+                if flip {
+                    x = -x;
+                    z = -z;
+                }
+                v[base] = if flip { 1.0 - fac } else { fac };
+                v[base + 1] = m.damage / 200.0;
+                v[base + 2] = x / 9.0;
+                v[base + 3] = z / 15.0;
                 v[base + 4] = (h.current / h.max).clamp(0.0, 1.0);
             }
         }

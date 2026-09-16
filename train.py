@@ -41,9 +41,10 @@ class SelfPlayEnv(gym.Env):
             if np.random.rand() < 0.75:
                 return NOOP
             return int(np.random.randint(N_ACTIONS))
-        # 对手也用合法动作掩码（红方 faction=1），不然自对弈对手太水
+        # 对手用红方镜像视角观测 + 红方合法掩码（之前错用蓝方视角，等于半瞎）
+        obs = np.array(self.inner.obs_for(1), dtype=np.float32)
         mask = np.array(self.inner.action_mask(1), dtype=bool)
-        a, _ = self.opp_model.predict(self._last_obs, deterministic=False, action_masks=mask)
+        a, _ = self.opp_model.predict(obs, deterministic=False, action_masks=mask)
         return int(a)
 
     def reset(self, seed=None, options=None):
