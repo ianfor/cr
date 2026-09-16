@@ -111,6 +111,7 @@ fn main() {
         (
             combat::collect_inputs,
             combat::apply_commands,
+            cards::process_deploying,
             combat::monster_ai,
             combat::tower_ai,
             combat::move_projectiles,

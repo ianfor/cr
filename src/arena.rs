@@ -20,7 +20,7 @@ pub fn flip_camera_for_enemy(
     }
     let Some(net) = net else { return };
     if net.my_index == 1 {
-        **camera = Transform::from_xyz(0.0, 34.0, 9.0).looking_at(Vec3::ZERO, Vec3::Y);
+        **camera = Transform::from_xyz(0.0, 34.0, 9.0).looking_at(Vec3::new(0.0, 0.0, 2.0), Vec3::Y);
         info!("红方视角：相机已镜像（己方半场在屏幕下方）");
         *flipped = true;
     }
@@ -33,6 +33,7 @@ pub fn setup(
 ) {
     // 斜视 + 正交投影：全图无近大远小，CR 式视角
     // IsDefaultUiCamera：让这台相机同时负责渲染 UI（圣水条）
+    // look_at 下移 2.0：底部留出卡牌/圣水 UI 的空间，不盖住玩家底线
     commands.spawn((
         Camera3d::default(),
         IsDefaultUiCamera,
@@ -42,7 +43,7 @@ pub fn setup(
             },
             ..OrthographicProjection::default_3d()
         }),
-        Transform::from_xyz(0.0, 34.0, -9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 34.0, -9.0).looking_at(Vec3::new(0.0, 0.0, -2.0), Vec3::Y),
     ));
 
     // 平行光

@@ -82,6 +82,8 @@ pub struct CardSpec {
     pub cost: f32,
     /// 一次出兵数量
     pub count: u32,
+    /// 放置时间（帧数，30 = 1 秒）：下卡后先出虚影，倒计时结束才变成真兵
+    pub deploy_ticks: u32,
     pub monster: MonsterSpec,
 }
 
@@ -93,6 +95,7 @@ pub const CARDS: [CardSpec; 4] = [
         name: "Knight",
         cost: 3.0,
         count: 1,
+        deploy_ticks: 30,
         monster: MonsterSpec {
             hp: 2000.0,
             damage: 100.0,
@@ -109,6 +112,7 @@ pub const CARDS: [CardSpec; 4] = [
         name: "Skeletons",
         cost: 1.0,
         count: 3,
+        deploy_ticks: 30,
         monster: MonsterSpec {
             hp: 300.0,
             damage: 50.0,
@@ -125,6 +129,7 @@ pub const CARDS: [CardSpec; 4] = [
         name: "Musketeer",
         cost: 4.0,
         count: 1,
+        deploy_ticks: 30,
         monster: MonsterSpec {
             hp: 1000.0,
             damage: 120.0,
@@ -141,6 +146,7 @@ pub const CARDS: [CardSpec; 4] = [
         name: "Giant",
         cost: 5.0,
         count: 1,
+        deploy_ticks: 30,
         monster: MonsterSpec {
             hp: 5000.0,
             damage: 150.0,

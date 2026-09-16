@@ -146,17 +146,72 @@ pub fn play_card(
     queue.push(played);
 
     // 多单位围绕落点散开（固定偏移，确定性）
+    // 先出虚影，放置时间结束才变成真兵（process_deploying 处理）
     const OFFSETS: [(f32, f32); 3] = [(0.0, 0.0), (-0.6, -0.5), (0.6, -0.5)];
     for k in 0..spec.count as usize {
         let (dx, dz) = OFFSETS[k % OFFSETS.len()];
-        spawn_unit(
+        spawn_ghost(
             commands,
             meshes,
             materials,
             faction,
-            &spec.monster,
+            spec,
             pos + Vec3::new(dx, 0.0, dz),
         );
+    }
+}
+
+/// 放置虚影：半透明胶囊 + Deploying 组件（不参与战斗/碰撞/索敌）
+fn spawn_ghost(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    faction: Faction,
+    spec: &CardSpec,
+    pos: Vec3,
+) {
+    let r = spec.monster.radius;
+    commands.spawn((
+        Deploying {
+            card: spec.id,
+            faction,
+            ticks_left: spec.deploy_ticks,
+        },
+        Mesh3d(meshes.add(Capsule3d::new(r, 2.0 * r))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: faction_color(faction).with_alpha(0.45),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        })),
+        Transform::from_translation(pos + Vec3::Y * 2.0 * r),
+        bevy::light::NotShadowCaster,
+    ));
+}
+
+/// 放置倒计时（帧同步链内）：虚影倒计时结束 → 变成真兵
+pub fn process_deploying(
+    mut commands: Commands,
+    mut deployers: Query<(Entity, &mut Deploying, &Transform)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (e, mut d, transform) in &mut deployers {
+        d.ticks_left -= 1;
+        if d.ticks_left == 0 {
+            let pos = transform.translation;
+            if let Some(spec) = CARDS.iter().find(|c| c.id == d.card) {
+                spawn_unit(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    d.faction,
+                    &spec.monster,
+                    Vec3::new(pos.x, 0.0, pos.z),
+                );
+            }
+            commands.entity(e).despawn();
+        }
     }
 }
 
@@ -361,7 +416,19 @@ mod tests {
         // 打出的牌到队尾
         let decks = world.resource::<Decks>();
         assert_eq!(decks.player[DECK_SIZE - 1], card_id);
-        // 按数量出兵，属性来自卡牌规格
+        // 放置时间未到：只有虚影，没有真兵
+        {
+            let mut monsters = world.query::<&Monster>();
+            assert_eq!(monsters.iter(world).count(), 0);
+            let mut deployers = world.query::<&Deploying>();
+            assert_eq!(deployers.iter(world).count(), spec.count as usize);
+        }
+        // 跑满放置时间 → 变成真兵，属性来自卡牌规格
+        let mut schedule = Schedule::default();
+        schedule.add_systems(process_deploying);
+        for _ in 0..spec.deploy_ticks {
+            schedule.run(world);
+        }
         let mut monsters = world.query::<&Monster>();
         let spawned: Vec<&Monster> = monsters.iter(world).collect();
         assert_eq!(spawned.len(), spec.count as usize);

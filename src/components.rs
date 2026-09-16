@@ -78,6 +78,14 @@ impl Health {
     }
 }
 
+/// 放置中的虚影：下卡后先显示一个半透明占位，倒计时结束变成真兵
+#[derive(Component)]
+pub struct Deploying {
+    pub card: u8,
+    pub faction: Faction,
+    pub ticks_left: u32,
+}
+
 /// 攻击计时器（攻击间隔）
 #[derive(Component)]
 pub struct AttackTimer(pub Timer);
