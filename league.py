@@ -70,6 +70,7 @@ class MixedOpponent:
 def main():
     prev_path = sys.argv[1]
     total = int(sys.argv[2]) if len(sys.argv) > 2 else 300000
+    fresh = len(sys.argv) > 3 and sys.argv[3] == "fresh"
     MODEL_DIR.mkdir(exist_ok=True)
 
     prev = MaskablePPO.load(prev_path)
@@ -77,7 +78,22 @@ def main():
     mixer = MixedOpponent(prev)
     mixer(env.unwrapped)
 
-    model = MaskablePPO.load(prev_path, env=env)  # 从上一代热启动
+    if fresh:
+        # exploiter 从随机权重冷启动打冻结池（联盟标准做法，避免热启动漂移）
+        model = MaskablePPO(
+            "MlpPolicy",
+            env,
+            n_steps=1024,
+            batch_size=256,
+            learning_rate=3e-4,
+            gamma=0.995,
+            ent_coef=0.02,
+            policy_kwargs=dict(net_arch=[128, 128]),
+            verbose=0,
+            device="cpu",
+        )
+    else:
+        model = MaskablePPO.load(prev_path, env=env)  # 从上一代热启动
     t0 = time.time()
     model.learn(
         total_timesteps=total,
