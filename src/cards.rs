@@ -233,6 +233,7 @@ fn spawn_unit(
             aggro_range: spec.aggro_range,
             speed: spec.speed,
             radius: r,
+            mass: spec.mass,
             ranged: spec.ranged,
             target: None,
         },

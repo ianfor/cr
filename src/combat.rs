@@ -452,29 +452,48 @@ pub fn move_projectiles(
     }
 }
 
-/// 怪物间的动态阻挡：重叠时互相推开（separation steering）
-/// 效果：不能穿模，前排停下交战时后排自然堵成一团
+/// 怪物推挤（转向力模型）：
+/// - 两两碰撞时按 dir/distance 累积转向力（越近力越大）
+/// - 力按质量分配：大质量怪物推开小质量怪物（轻的吃更多力）
+/// - 总力钳制 MAX_STEERING_FORCE，以速度形式施加（不再硬改位置，防闪现）
 pub fn separate_monsters(mut monsters: Query<(&Monster, &mut Transform)>) {
-    let snaps: Vec<(Vec3, f32)> = monsters
+    // 快照 (pos, radius, mass)
+    let snaps: Vec<(Vec3, f32, f32)> = monsters
         .iter()
-        .map(|(m, t)| (t.translation, m.radius))
+        .map(|(m, t)| (t.translation, m.radius, m.mass))
         .collect();
-    for (i, (m, mut transform)) in monsters.iter_mut().enumerate() {
-        let mut push = Vec3::ZERO;
-        for (j, (other_pos, other_radius)) in snaps.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-            let min_dist = m.radius + other_radius;
-            let mut diff = transform.translation - *other_pos;
+    let mut forces: Vec<Vec3> = vec![Vec3::ZERO; snaps.len()];
+
+    for i in 0..snaps.len() {
+        for j in (i + 1)..snaps.len() {
+            let mut diff = snaps[i].0 - snaps[j].0;
             diff.y = 0.0;
             let dist = diff.length();
+            let min_dist = snaps[i].1 + snaps[j].1;
             if dist < min_dist && dist > 1e-4 {
-                // 重叠越多推得越狠
-                push += diff.normalize() * (min_dist - dist);
+                // dir / distance：越近力越大（参考算法）
+                let f = diff.normalize() / dist;
+                // 质量加权：i 吃的力 ∝ j 的质量占比，j 吃的力 ∝ i 的质量占比
+                let total_mass = snaps[i].2 + snaps[j].2;
+                forces[i] += f * (snaps[j].2 / total_mass);
+                forces[j] -= f * (snaps[i].2 / total_mass);
             }
         }
-        transform.translation += push * 0.5;
+    }
+
+    for (i, (_, mut transform)) in monsters.iter_mut().enumerate() {
+        let mut f = forces[i];
+        f.y = 0.0;
+        let mag = f.length();
+        if mag > 1e-4 {
+            // 总力钳制上限后以速度形式施加位移
+            let capped = if mag > MAX_STEERING_FORCE {
+                f * (MAX_STEERING_FORCE / mag)
+            } else {
+                f
+            };
+            transform.translation += capped * TICK_DT;
+        }
     }
 }
 
@@ -679,6 +698,7 @@ mod tests {
                 aggro_range: 5.0,
                 speed: 1.5,
                 radius: 0.5,
+                mass: 1.0,
                 ranged: false,
                 target: None,
             },
@@ -812,6 +832,7 @@ mod aggro_tests {
             aggro_range: 5.0,
             speed: 3.0,
             radius: 0.5,
+            mass: 1.0,
             ranged: false,
             target: None,
         };
@@ -866,6 +887,7 @@ mod lock_retarget_tests {
             aggro_range: 5.0,
             speed: 1.5,
             radius: 0.5,
+            mass: 1.0,
             ranged: false,
             target: None,
         }
@@ -933,6 +955,7 @@ mod engaged_lock_tests {
             aggro_range: 5.0,
             speed: 1.5,
             radius: 0.5,
+            mass: 1.0,
             ranged: false,
             target: None,
         }
@@ -998,6 +1021,7 @@ mod interrupt_tests {
             aggro_range: 5.0,
             speed: 1.5,
             radius: 0.5,
+            mass: 1.0,
             ranged: false,
             target: None,
         }
@@ -1052,5 +1076,65 @@ mod interrupt_tests {
         schedule.run(world);
         // 被打断 → 改锁挤它的怪，而不是走回塔
         assert_eq!(world.get::<Monster>(m).unwrap().target, Some(e));
+    }
+}
+
+#[cfg(test)]
+mod steering_tests {
+    use super::*;
+
+    fn mk_with_mass(faction: Faction, mass: f32) -> Monster {
+        Monster {
+            faction,
+            damage: 100.0,
+            attack_range: 0.75,
+            aggro_range: 5.0,
+            speed: 1.5,
+            radius: 0.5,
+            mass,
+            ranged: false,
+            target: None,
+        }
+    }
+
+    /// 质量加权推挤：重叠时小质量位移远大于大质量
+    #[test]
+    fn heavy_pushes_light_more() {
+        let mut app = App::new();
+        let world = app.world_mut();
+        let heavy = world
+            .spawn((
+                mk_with_mass(Faction::Player, 3.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        let light = world
+            .spawn((
+                mk_with_mass(Faction::Player, 0.3),
+                Transform::from_xyz(0.6, 1.0, 0.0), // 重叠（0.6 < 1.0）
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(separate_monsters);
+        schedule.run(world);
+
+        let heavy_move = world
+            .get::<Transform>(heavy)
+            .unwrap()
+            .translation
+            .distance(Vec3::new(0.0, 1.0, 0.0));
+        let light_move = world
+            .get::<Transform>(light)
+            .unwrap()
+            .translation
+            .distance(Vec3::new(0.6, 1.0, 0.0));
+        assert!(
+            light_move > heavy_move * 3.0,
+            "小质量位移({light_move})应远大于大质量({heavy_move})"
+        );
+        // 单帧位移不得超过力上限（防闪现）
+        assert!(light_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
+        assert!(heavy_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
     }
 }

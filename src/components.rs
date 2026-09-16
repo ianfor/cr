@@ -47,6 +47,8 @@ pub struct Monster {
     pub aggro_range: f32,
     pub speed: f32,
     pub radius: f32,
+    /// 质量：推挤时按质量分配力，大质量推开小质量
+    pub mass: f32,
     pub ranged: bool,
     /// 锁定的攻击目标：不切换，直到目标消失（死亡）才重新索敌
     pub target: Option<Entity>,

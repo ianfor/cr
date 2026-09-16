@@ -60,6 +60,8 @@ pub const ATTACK_INTERVAL: f32 = 1.0;
 pub const TOWER_ATTACK_DAMAGE: f32 = 200.0;
 pub const PROJECTILE_SPEED: f32 = 14.0;
 pub const PROJECTILE_RADIUS: f32 = 0.18;
+/// 推挤转向力上限（单位/秒）：密集时也只以这个速度被推开，防止"挤得闪现"
+pub const MAX_STEERING_FORCE: f32 = 4.0;
 
 /// 怪物个体属性（由卡牌规格决定）
 pub struct MonsterSpec {
@@ -71,6 +73,8 @@ pub struct MonsterSpec {
     pub aggro_range: f32,
     pub speed: f32,
     pub radius: f32,
+    /// 质量：推挤时按质量分配力，大质量推开小质量
+    pub mass: f32,
     /// 是否远程（攻击时发射子弹而非直接扣血）
     pub ranged: bool,
 }
@@ -103,6 +107,7 @@ pub const CARDS: [CardSpec; 4] = [
             aggro_range: 5.0,
             speed: 1.5,
             radius: 0.5,
+            mass: 1.0,
             ranged: false,
         },
     },
@@ -120,6 +125,7 @@ pub const CARDS: [CardSpec; 4] = [
             aggro_range: 2.0,
             speed: 2.0,
             radius: 0.3,
+            mass: 0.3,
             ranged: false,
         },
     },
@@ -137,6 +143,7 @@ pub const CARDS: [CardSpec; 4] = [
             aggro_range: 5.0,
             speed: 1.5,
             radius: 0.5,
+            mass: 0.8,
             ranged: true,
         },
     },
@@ -154,6 +161,7 @@ pub const CARDS: [CardSpec; 4] = [
             aggro_range: 5.0,
             speed: 1.0,
             radius: 0.8,
+            mass: 3.0,
             ranged: false,
         },
     },
