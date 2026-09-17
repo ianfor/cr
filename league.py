@@ -14,32 +14,35 @@ from stable_baselines3.common.callbacks import BaseCallback
 from train import SelfPlayEnv, mask_fn, evaluate
 
 MODEL_DIR = Path("models")
-GATE_EPISODES = 60
+# 门控局数：200 局 σ≈±3.5%，60 局的 ±6.5% 纯抛硬币（gen1 过门有运气成分的教训）
+GATE_EPISODES = 200
 GATE_THRESHOLD = 0.55
 
 
 class AnnealedOpponentCallback(BaseCallback):
-    """对手退火：先多打随机练基本功，再逐步加重锚点比例
-    （冷启动模型开局太弱，70% 锚点会把基础打崩——gen2 的教训）"""
+    """对手退火：先多打非锚点练基本功，再逐步加重锚点比例
+    （冷启动模型开局太弱，70% 锚点会把基础打崩——gen2 的教训）。
+    阈值按总步数等比缩放（原始 150K/300K 是按 30 万步总长写的）"""
 
-    # (步数阈值, 锚点概率)
-    SCHEDULE = [
-        (0, 0.2),
-        (150_000, 0.5),
-        (300_000, 0.7),
-    ]
-
-    def __init__(self, env, anchor, check_freq=8192):
+    def __init__(self, env, anchor, total_steps, check_freq=8192):
         super().__init__()
         self.env = env
         self.anchor = anchor
         self.check_freq = check_freq
         self._next = check_freq
+        # (总步数比例, 锚点概率)
+        self.schedule = [
+            (0.0, 0.2),
+            (0.5, 0.5),
+            (1.0, 0.7),
+        ]
+        self.total_steps = total_steps
 
     def _anchor_prob(self, steps):
-        p = self.SCHEDULE[0][1]
-        for threshold, prob in self.SCHEDULE:
-            if steps >= threshold:
+        frac = steps / max(self.total_steps, 1)
+        p = self.schedule[0][1]
+        for threshold, prob in self.schedule:
+            if frac >= threshold:
                 p = prob
         return p
 
@@ -113,14 +116,15 @@ def main():
     t0 = time.time()
     model.learn(
         total_timesteps=total,
-        callback=AnnealedOpponentCallback(env.unwrapped, prev),
+        callback=AnnealedOpponentCallback(env.unwrapped, prev, total),
     )
     secs = time.time() - t0
 
-    wr_random = evaluate(model)
+    wr_random = evaluate(model, episodes=60)
+    wr_script = evaluate(model, mode="scripted", episodes=60)
     wr_prev = evaluate_vs(model, prev)
     print(f"train {total} steps in {secs:.0f}s ({total/secs:.0f} steps/s)")
-    print(f"vs random: {wr_random:.0%}   vs prev: {wr_prev:.0%}")
+    print(f"vs random: {wr_random:.0%}   vs script: {wr_script:.0%}   vs prev: {wr_prev:.0%}")
 
     # 无条件存档（门控只决定"是否当新师傅"，不再丢模型）
     path = MODEL_DIR / f"cand_r{wr_random:.2f}_p{wr_prev:.2f}.zip"
