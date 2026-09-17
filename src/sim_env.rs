@@ -117,10 +117,18 @@ fn faction_sign(faction: Faction) -> f32 {
 }
 
 /// 格子 → 世界坐标（x 列均分 [-7,7]，z 行覆盖 [sign*2, sign*14]）
+///
+/// 红方（Enemy）的动作列做 x 镜像：动作格列 c 落在世界 x=7-2c，与红方视角
+/// 观测的列 c 完全对齐（观测是 180° 镜像的）。若不镜像，红方模型在视角里
+/// 看到"右路的敌人"、出牌却落到左路——攻防全部左右错位（实测执红模型
+/// 因此被同水平蓝方打 70%）。蓝方视角观测与动作同为恒等映射，天然对齐。
 pub fn cell_to_pos(faction: Faction, cell: usize) -> (f32, f32) {
     let col = (cell % N_COLS) as f32;
     let row = (cell / N_COLS) as f32;
-    let x = -7.0 + col * (14.0 / (N_COLS - 1) as f32);
+    let x = match faction {
+        Faction::Player => -7.0 + col * (14.0 / (N_COLS - 1) as f32),
+        Faction::Enemy => 7.0 - col * (14.0 / (N_COLS - 1) as f32),
+    };
     let z = faction_sign(faction) * (2.0 + row * (12.0 / (N_ROWS - 1) as f32));
     (x, z)
 }
@@ -765,6 +773,21 @@ mod tests {
         assert_ne!(a, NOOP_ACTION);
         let mask = action_mask(w.world_mut(), Faction::Enemy);
         assert!(mask[a], "脚本动作必须落在合法掩码内");
+    }
+
+    /// 动作格与观测网格必须视角对齐：任何阵营的动作格 (row, col) 落到世界后，
+    /// 经该阵营视角 grid_cell 桶化必须回到同一 (row, col)。红方曾因动作列
+    /// 不镜像导致"看右路防左路"（执红模型被同水平蓝方打 70%）
+    #[test]
+    fn action_grid_aligns_with_view() {
+        for &cell in &[0usize, 1, 5, 7, 8, 55, 76, 111] {
+            let row = cell / N_COLS;
+            let col = cell % N_COLS;
+            let (bx, bz) = cell_to_pos(Faction::Player, cell);
+            assert_eq!(grid_cell(bx, bz, false), (row, col), "蓝方格 {cell}");
+            let (rx, rz) = cell_to_pos(Faction::Enemy, cell);
+            assert_eq!(grid_cell(rx, rz, true), (row, col), "红方格 {cell}");
+        }
     }
 
     /// 随机策略自对弈：环境能跑完整局并给出胜负
