@@ -81,6 +81,17 @@ impl CrEnv {
         };
         bevy_hello::sim_env::action_mask(self.world.world_mut(), faction)
     }
+
+    /// 脚本化课程对手（faction: 0=蓝 1=红）：囤水到 8 打最贵牌压敌方弱侧桥头。
+    /// 返回动作索引（含 NOOP）；训练时由 Python 侧决定何时调用
+    fn scripted_action(&mut self, faction: u8) -> usize {
+        let faction = if faction == 0 {
+            Faction::Player
+        } else {
+            Faction::Enemy
+        };
+        bevy_hello::sim_env::scripted_action(self.world.world_mut(), faction)
+    }
 }
 
 #[pymodule]

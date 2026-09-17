@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-# 自我对弈 PPO 训练（冒烟版）：MLP 小网络 + MaskablePPO + 快照对手 + 胜率门控
+# gen0' 冷启动训练：MLP 小网络 + MaskablePPO + 课程对手（70% 脚本 / 30% 随机）
+# 奖励：胜负 ±1 + 塔血差 shaping(0.0005/HP) + 出牌引导(0.004) + 囤水罚 + 击杀交换
 # 用法: .venv/Scripts/python.exe train.py [总步数, 默认 20000]
 
 import sys
@@ -22,7 +23,7 @@ MODEL_DIR = Path("models")
 
 
 class SelfPlayEnv(gym.Env):
-    """蓝方为学习方；红方由快照模型（或随机策略）扮演"""
+    """蓝方为学习方；红方由脚本/随机/快照模型扮演"""
 
     def __init__(self):
         super().__init__()
@@ -31,6 +32,8 @@ class SelfPlayEnv(gym.Env):
         self.observation_space = gym.spaces.Box(-2.0, 2.0, shape=(OBS_SIZE,), dtype=np.float32)
         self.action_space = gym.spaces.Discrete(N_ACTIONS)
         self.opp_model = None
+        # 对手模式：mix=训练课程（70% 脚本+30% 随机）/ random / scripted / model
+        self.opp_mode = "mix"
         self.ep_seed = 0
         self._last_obs = None
 
@@ -38,15 +41,24 @@ class SelfPlayEnv(gym.Env):
         self.opp_model = model
 
     def _opp_action(self):
-        if self.opp_model is None:
+        if self.opp_model is not None:
+            # 对手用红方镜像视角观测 + 红方合法掩码（之前错用蓝方视角，等于半瞎）
+            obs = np.array(self.inner.obs_for(1), dtype=np.float32)
+            mask = np.array(self.inner.action_mask(1), dtype=bool)
+            a, _ = self.opp_model.predict(obs, deterministic=False, action_masks=mask)
+            return int(a)
+        if self.opp_mode == "scripted":
+            return int(self.inner.scripted_action(1))
+        if self.opp_mode == "random":
             if np.random.rand() < 0.75:
                 return NOOP
             return int(np.random.randint(N_ACTIONS))
-        # 对手用红方镜像视角观测 + 红方合法掩码（之前错用蓝方视角，等于半瞎）
-        obs = np.array(self.inner.obs_for(1), dtype=np.float32)
-        mask = np.array(self.inner.action_mask(1), dtype=bool)
-        a, _ = self.opp_model.predict(obs, deterministic=False, action_masks=mask)
-        return int(a)
+        # mix：课程对手
+        if np.random.rand() < 0.7:
+            return int(self.inner.scripted_action(1))
+        if np.random.rand() < 0.75:
+            return NOOP
+        return int(np.random.randint(N_ACTIONS))
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -84,9 +96,10 @@ class OpponentUpdateCallback(BaseCallback):
         return True
 
 
-def evaluate(model, episodes=20):
-    """模型 vs 随机策略胜率"""
+def evaluate(model, episodes=60, mode="random"):
+    """模型 vs 指定对手（random/scripted）胜率"""
     env = SelfPlayEnv()
+    env.opp_mode = mode
     env.set_opponent(None)
     wins = 0
     for ep in range(episodes):
@@ -126,8 +139,10 @@ def main():
     secs = time.time() - t0
 
     wr = evaluate(model)
+    wr_script = evaluate(model, mode="scripted")
     print(f"train {total} steps in {secs:.0f}s ({total/secs:.0f} steps/s)")
     print(f"vs random winrate: {wr:.0%}")
+    print(f"vs scripted winrate: {wr_script:.0%}")
 
     path = MODEL_DIR / f"gen0_wr{wr:.2f}.zip"
     model.save(path)

@@ -44,6 +44,11 @@ pub const N_ACTIONS: usize = 4 * N_CELLS + 1;
 /// "不出牌"动作索引
 pub const NOOP_ACTION: usize = N_ACTIONS - 1;
 
+// ===== 脚本对手用的卡 id（与 constants.rs 的 CARDS 对应） =====
+pub const KNIGHT_CARD: u8 = 0;
+pub const MUSKETEER_CARD: u8 = 2;
+pub const GIANT_CARD: u8 = 3;
+
 fn faction_sign(faction: Faction) -> f32 {
     match faction {
         Faction::Player => -1.0,
@@ -211,6 +216,80 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     v
 }
 
+/// 脚本化课程对手（只供训练用，不进游戏/模拟链）：
+/// CR 基本功——"坦克+远程"组合拳，实测 vs 随机 60%（孤身巨人只有 36%）：
+/// 1. 巨人在手且圣水 ≥5 → 顶敌方弱侧桥头（z=2 吸塔伤）
+/// 2. 火枪手在手且圣水 ≥4 → 跟场上巨人同路的后排（z=5，躲巨人后面输出）
+/// 3. 骑士在手且圣水 ≥8 → 富余圣水补一波前排
+/// 其余情况挂机囤水。路线：默认右路，敌方右塔被我方打伤后换攻左路（牵制空档）。
+pub fn scripted_action(world: &mut World, faction: Faction) -> usize {
+    let elixir = elixir_of(world, faction);
+
+    // 进攻方向：默认主攻右路；当敌方右塔血量低于左塔（被我方打伤）时换攻左路。
+    // 实测（200 局）这种"打伤一路就换路"≈53.5%，死磕单路/打弱侧≈38%——
+    // 换路能牵制对手把防守资源堆到受伤一侧后的空档
+    let enemy = if faction == Faction::Player {
+        Faction::Enemy
+    } else {
+        Faction::Player
+    };
+    let mut enemy_left_hp = f32::INFINITY;
+    let mut enemy_right_hp = f32::INFINITY;
+    {
+        let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
+        for (t, h, k, tr) in q.iter(world) {
+            if t.faction == enemy && k.is_none() {
+                if tr.translation.x < 0.0 {
+                    enemy_left_hp = h.current;
+                } else {
+                    enemy_right_hp = h.current;
+                }
+            }
+        }
+    }
+    let lane_x = if enemy_right_hp < enemy_left_hp {
+        BRIDGES[0]
+    } else {
+        BRIDGES[1]
+    };
+
+    let towers = tower_snaps(world);
+    // (卡 id, 圣水门槛, 目标 z) 的出牌优先级：巨人前排 → 火枪后排 → 骑士补刀
+    let plays: [(u8, f32, f32); 3] = [
+        (GIANT_CARD, 5.0, 2.0),
+        (MUSKETEER_CARD, 4.0, 5.0),
+        (KNIGHT_CARD, 8.0, 2.0),
+    ];
+    for &(card, min_elixir, z) in &plays {
+        if elixir < min_elixir {
+            continue;
+        }
+        let Some(slot) = (0..HAND_SIZE).find(|&s| hand_card(world, faction, s) == Some(card)) else {
+            continue;
+        };
+        // 落点：目标点（桥头路线上）附近最近的合法格
+        let sign = faction_sign(faction);
+        let target_z = sign * z;
+        let mut best_cell = None;
+        let mut best_d = f32::MAX;
+        for cell in 0..N_CELLS {
+            let (x, cz) = cell_to_pos(faction, cell);
+            if !cards::deploy_allowed(faction, Vec3::new(x, 0.0, cz), &towers) {
+                continue;
+            }
+            let d = (x - lane_x) * (x - lane_x) + (cz - target_z) * (cz - target_z);
+            if d < best_d {
+                best_d = d;
+                best_cell = Some(cell);
+            }
+        }
+        if let Some(cell) = best_cell {
+            return slot * N_CELLS + cell;
+        }
+    }
+    NOOP_ACTION
+}
+
 pub struct StepResult {
     pub obs: Vec<f32>,
     /// 蓝方（Player）视角奖励：胜负 ±1 + 塔血差 shaping
@@ -347,9 +426,14 @@ impl SimWorld {
             }
         }
 
-        // 奖励：塔血差 shaping + 终局胜负 + 圣水使用引导 + 击杀交换
+        // 奖励（蓝方视角）：
+        // - 塔血差 shaping ×0.0005：与"赢"最对齐的稠密信号（拆满一侧面 ≈ ±11，
+        //   典型胜局净差 4000 HP ≈ +2.0，量级压过其他 shaping 但不超过胜负和太多）
+        // - 出牌激励 ×0.004：只做"别囤死水"的引导（×57 次/局 ≈ +0.23，
+        //   原 0.02 时 ≈ +1.14 与胜负 ±1 同量级，策略会被"刷出牌"绑架）
+        // - 囤水罚/击杀交换：保持不变
         let now = self.tower_hp_sums();
-        let mut reward = (self.tower_hp[1] - now[1] - (self.tower_hp[0] - now[0])) * 0.0002;
+        let mut reward = (self.tower_hp[1] - now[1] - (self.tower_hp[0] - now[0])) * 0.0005;
         self.tower_hp = now;
 
         // 出牌激励：本步内蓝方实际执行的指令数（被 play_card 接受的）
@@ -358,7 +442,7 @@ impl SimWorld {
             .iter()
             .filter(|(_, c)| matches!(c, GameCommand::Deploy { faction: Faction::Player, .. }))
             .count();
-        reward += deployed_blue as f32 * 0.02;
+        reward += deployed_blue as f32 * 0.004;
         // 囤水惩罚：圣水满着不用就是浪费
         if self.app.world().resource::<Elixir>().player >= ELIXIR_MAX - 1e-6 {
             reward -= 0.005;
@@ -550,6 +634,21 @@ mod tests {
             w.step(act, None);
         }
         assert!(w.world_mut().resource::<Assets<Mesh>>().len() > 0);
+    }
+
+    /// 脚本对手：圣水低于最低出牌门槛（4）时挂机；囤到 9 必出合法组合动作
+    #[test]
+    fn scripted_opponent_deploys_when_rich() {
+        let mut w = SimWorld::new();
+        // 圣水 3：低于所有出牌门槛（巨人5/火枪4/骑士8）→ 挂机
+        w.world_mut().resource_mut::<Elixir>().enemy = 3.0;
+        assert_eq!(scripted_action(w.world_mut(), Faction::Enemy), NOOP_ACTION);
+        // 攒到 9：必有可出组合动作（手牌 4 张里必有非骷髅牌）
+        w.world_mut().resource_mut::<Elixir>().enemy = 9.0;
+        let a = scripted_action(w.world_mut(), Faction::Enemy);
+        assert_ne!(a, NOOP_ACTION);
+        let mask = action_mask(w.world_mut(), Faction::Enemy);
+        assert!(mask[a], "脚本动作必须落在合法掩码内");
     }
 
     /// 随机策略自对弈：环境能跑完整局并给出胜负
