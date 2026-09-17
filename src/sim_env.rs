@@ -383,6 +383,13 @@ impl SimWorld {
         *self.app.world_mut().resource_mut::<Assets<Mesh>>() = Assets::default();
         *self.app.world_mut().resource_mut::<Assets<StandardMaterial>>() = Assets::default();
         *self.app.world_mut().resource_mut::<Decks>() = Decks::shuffled_with(deck_seed);
+        // 对称牌库：双方同一洗牌序（仅训练环境；正式对局仍各自洗牌）。
+        // 双方摸牌运气差异是胜负 ±1 信号的主要噪声源——技能差被牌运稀释，
+        // 实测所有策略（模型/脚本/随机）在非对称牌库下全部挤在 40~55%。
+        {
+            let same = self.app.world().resource::<Decks>().player.clone();
+            self.app.world_mut().resource_mut::<Decks>().enemy = same;
+        }
         // reset_world 不清对局状态，上一局的 GameOver 必须手动复位
         *self.app.world_mut().resource_mut::<SimState>() = SimState::Solo;
         if let Some(t) = self.regular_ticks {
@@ -636,10 +643,32 @@ mod tests {
         assert!(w.world_mut().resource::<Assets<Mesh>>().len() > 0);
     }
 
+    /// 对称牌库：训练环境 reset 后双方牌序完全一致（消除摸牌运气）
+    #[test]
+    fn reset_gives_symmetric_decks() {
+        let mut w = SimWorld::new();
+        w.reset(7);
+        let decks = w.world().resource::<Decks>();
+        assert_eq!(decks.player, decks.enemy, "训练环境双方应共享同一洗牌序");
+        // 双方各自出同槽位的牌（各自半场），循环推进后双方队列仍逐位一致
+        let blue = Some(EnvAction {
+            slot: 0,
+            x: 0.0,
+            z: -5.0,
+        });
+        let red = Some(EnvAction {
+            slot: 0,
+            x: 0.0,
+            z: 5.0,
+        });
+        w.step(blue, red);
+        let decks = w.world().resource::<Decks>();
+        assert_eq!(decks.player, decks.enemy);
+    }
+
     /// 脚本对手：圣水低于最低出牌门槛（4）时挂机；囤到 9 必出合法组合动作
     #[test]
-    fn scripted_opponent_deploys_when_rich() {
-        let mut w = SimWorld::new();
+    fn scripted_opponent_deploys_when_rich() {        let mut w = SimWorld::new();
         // 圣水 3：低于所有出牌门槛（巨人5/火枪4/骑士8）→ 挂机
         w.world_mut().resource_mut::<Elixir>().enemy = 3.0;
         assert_eq!(scripted_action(w.world_mut(), Faction::Enemy), NOOP_ACTION);
