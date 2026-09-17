@@ -297,6 +297,12 @@ impl SimWorld {
     /// 重置对局：deck_seed 驱动洗牌（训练时每局变化，评估时固定）
     pub fn reset(&mut self, deck_seed: u32) -> Vec<f32> {
         crate::replay::reset_world(self.app.world_mut());
+        // 释放上一局累计的渲染资产：每次出牌/单位出生都会 meshes.add / materials.add
+        // 新资产，而 Assets 存储只增不减（实体 despawn 不释放资产）——
+        // 游戏内一局几百个无所谓，训练连跑几千局会无界增长直到 OOM。
+        // 无头模拟不渲染，整体换新对模拟零影响（旧 handle 悬空无害）。
+        *self.app.world_mut().resource_mut::<Assets<Mesh>>() = Assets::default();
+        *self.app.world_mut().resource_mut::<Assets<StandardMaterial>>() = Assets::default();
         *self.app.world_mut().resource_mut::<Decks>() = Decks::shuffled_with(deck_seed);
         // reset_world 不清对局状态，上一局的 GameOver 必须手动复位
         *self.app.world_mut().resource_mut::<SimState>() = SimState::Solo;
@@ -511,6 +517,39 @@ mod tests {
         assert_eq!(red.len(), OBS_SIZE);
         assert_eq!(red[0], obs[1]);
         assert_eq!(red[1], obs[0]);
+    }
+
+    /// reset 必须释放上一局累计的渲染资产（否则训练长跑内存无界增长）
+    #[test]
+    fn reset_frees_visual_assets() {
+        let mut w = SimWorld::new();
+        // 出一张牌：Deploying 幽灵 + 落地单位都会 meshes.add / materials.add
+        let act = Some(EnvAction {
+            slot: 0,
+            x: 0.0,
+            z: -5.0,
+        });
+        for _ in 0..4 {
+            w.step(act, None);
+        }
+        let meshes = w.world_mut().resource_mut::<Assets<Mesh>>().len();
+        let mats = w
+            .world_mut()
+            .resource_mut::<Assets<StandardMaterial>>()
+            .len();
+        assert!(meshes > 0, "出牌后应存在渲染资产，实际 {}", meshes);
+        assert!(mats > 0, "出牌后应存在材质，实际 {}", mats);
+        w.reset(1);
+        assert_eq!(w.world_mut().resource::<Assets<Mesh>>().len(), 0);
+        assert_eq!(
+            w.world_mut().resource::<Assets<StandardMaterial>>().len(),
+            0
+        );
+        // 清空后能继续正常出牌（新资产照常创建）
+        for _ in 0..4 {
+            w.step(act, None);
+        }
+        assert!(w.world_mut().resource::<Assets<Mesh>>().len() > 0);
     }
 
     /// 随机策略自对弈：环境能跑完整局并给出胜负
