@@ -31,6 +31,168 @@ const MAX_OBS_UNITS: usize = 20;
 /// 观测向量长度
 pub const OBS_SIZE: usize = 17 + MAX_OBS_UNITS * 5;
 
+// ===== 动作空间映射（训练与游戏内机器人共用） =====
+/// 部署网格列数/行数：覆盖自己半场
+pub const N_COLS: usize = 8;
+pub const N_ROWS: usize = 14;
+pub const N_CELLS: usize = N_COLS * N_ROWS;
+/// 4 卡槽 × 112 部署格 + 1 不出牌
+pub const N_ACTIONS: usize = 4 * N_CELLS + 1;
+/// "不出牌"动作索引
+pub const NOOP_ACTION: usize = N_ACTIONS - 1;
+
+fn faction_sign(faction: Faction) -> f32 {
+    match faction {
+        Faction::Player => -1.0,
+        Faction::Enemy => 1.0,
+    }
+}
+
+/// 格子 → 世界坐标（x 列均分 [-7,7]，z 行覆盖 [sign*2, sign*14]）
+pub fn cell_to_pos(faction: Faction, cell: usize) -> (f32, f32) {
+    let col = (cell % N_COLS) as f32;
+    let row = (cell / N_COLS) as f32;
+    let x = -7.0 + col * (14.0 / (N_COLS - 1) as f32);
+    let z = faction_sign(faction) * (2.0 + row * (12.0 / (N_ROWS - 1) as f32));
+    (x, z)
+}
+
+/// 动作索引 → EnvAction（超出出牌区 = None 不出牌）
+pub fn idx_to_action(faction: Faction, idx: usize) -> Option<EnvAction> {
+    if idx >= 4 * N_CELLS {
+        return None;
+    }
+    let (x, z) = cell_to_pos(faction, idx % N_CELLS);
+    Some(EnvAction {
+        slot: idx / N_CELLS,
+        x,
+        z,
+    })
+}
+
+// ===== 直接操作 World 的自由函数（SimWorld 与游戏内机器人共用） =====
+
+/// 某方手牌槽位对应的卡 id
+pub fn hand_card(world: &mut World, faction: Faction, slot: usize) -> Option<u8> {
+    let decks = world.resource::<Decks>();
+    decks.queue(faction).get(slot).copied()
+}
+
+/// 某方当前圣水
+pub fn elixir_of(world: &mut World, faction: Faction) -> f32 {
+    let e = world.resource::<Elixir>();
+    match faction {
+        Faction::Player => e.player,
+        Faction::Enemy => e.enemy,
+    }
+}
+
+/// 塔快照 (faction, is_king, pos)
+pub fn tower_snaps(world: &mut World) -> Vec<(Faction, bool, Vec3)> {
+    let mut q = world.query::<(&Tower, &Transform, Option<&KingTower>)>();
+    q.iter(world)
+        .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+        .collect()
+}
+
+/// 动作合法性掩码：卡槽需圣水足够；格子需部署规则允许
+pub fn action_mask(world: &mut World, faction: Faction) -> Vec<bool> {
+    let elixir = elixir_of(world, faction);
+    let towers = tower_snaps(world);
+    let mut mask = vec![false; N_ACTIONS];
+    for slot in 0..4 {
+        let Some(card_id) = hand_card(world, faction, slot) else {
+            continue;
+        };
+        let cost = CARDS[card_id as usize].cost;
+        if elixir < cost {
+            continue;
+        }
+        for cell in 0..N_CELLS {
+            let (x, z) = cell_to_pos(faction, cell);
+            if cards::deploy_allowed(faction, Vec3::new(x, 0.0, z), &towers) {
+                mask[slot * N_CELLS + cell] = true;
+            }
+        }
+    }
+    mask[NOOP_ACTION] = true; // 不出牌永远合法
+    mask
+}
+
+/// 定长观测向量：flip=false 蓝方视角，flip=true 红方镜像视角
+pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
+    let mut v = vec![0.0f32; OBS_SIZE];
+
+    let elixir = world.resource::<Elixir>();
+    let (own_e, opp_e) = if flip {
+        (elixir.enemy, elixir.player)
+    } else {
+        (elixir.player, elixir.enemy)
+    };
+    v[0] = own_e / ELIXIR_MAX;
+    v[1] = opp_e / ELIXIR_MAX;
+
+    let own_faction = if flip {
+        Faction::Enemy
+    } else {
+        Faction::Player
+    };
+    let decks = world.resource::<Decks>();
+    let queue = decks.queue(own_faction);
+    for (i, c) in queue.iter().take(HAND_SIZE).enumerate() {
+        v[2 + i] = *c as f32 / (CARDS.len() - 1) as f32;
+    }
+    v[6] = queue[HAND_SIZE] as f32 / (CARDS.len() - 1) as f32;
+
+    let timer = world.resource::<MatchTimer>();
+    v[7] = (timer.phase == MatchPhase::Regular) as u8 as f32;
+    v[8] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
+    v[9] = (timer.phase == MatchPhase::Drain) as u8 as f32;
+    v[10] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
+
+    // 塔血：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
+    {
+        let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
+        for (t, h, k, tr) in q.iter(world) {
+            let same_side = t.faction == own_faction;
+            let mut x = tr.translation.x;
+            if flip {
+                x = -x;
+            }
+            let side = match (same_side, k.is_some()) {
+                (true, true) => 0,
+                (true, false) => 1 + (x > 0.0) as usize,
+                (false, true) => 3,
+                (false, false) => 4 + (x > 0.0) as usize,
+            };
+            v[11 + side] = (h.current / h.max).clamp(0.0, 1.0);
+        }
+    }
+
+    // 单位：flip 时阵营标签互换、坐标 180° 旋转
+    {
+        let mut q = world.query::<(&Monster, &Health, &Transform)>();
+        for (i, (m, h, tr)) in q.iter(world).take(MAX_OBS_UNITS).enumerate() {
+            let base = 17 + i * 5;
+            let (fac, mut x, mut z) = (
+                m.faction.index() as f32,
+                tr.translation.x,
+                tr.translation.z,
+            );
+            if flip {
+                x = -x;
+                z = -z;
+            }
+            v[base] = if flip { 1.0 - fac } else { fac };
+            v[base + 1] = m.damage / 200.0;
+            v[base + 2] = x / 9.0;
+            v[base + 3] = z / 15.0;
+            v[base + 4] = (h.current / h.max).clamp(0.0, 1.0);
+        }
+    }
+    v
+}
+
 pub struct StepResult {
     pub obs: Vec<f32>,
     /// 蓝方（Player）视角奖励：胜负 ±1 + 塔血差 shaping
@@ -259,77 +421,20 @@ impl SimWorld {
     }
 
     fn obs_impl(&mut self, flip: bool) -> Vec<f32> {
-        let mut v = vec![0.0f32; OBS_SIZE];
-        let world = self.app.world_mut();
-
-        let elixir = world.resource::<Elixir>();
-        let (own_e, opp_e) = if flip {
-            (elixir.enemy, elixir.player)
-        } else {
-            (elixir.player, elixir.enemy)
-        };
-        v[0] = own_e / ELIXIR_MAX;
-        v[1] = opp_e / ELIXIR_MAX;
-
-        let own_faction = if flip {
-            Faction::Enemy
-        } else {
-            Faction::Player
-        };
-        let decks = world.resource::<Decks>();
-        let queue = decks.queue(own_faction);
-        for (i, c) in queue.iter().take(HAND_SIZE).enumerate() {
-            v[2 + i] = *c as f32 / (CARDS.len() - 1) as f32;
-        }
-        v[6] = queue[HAND_SIZE] as f32 / (CARDS.len() - 1) as f32;
-
-        let timer = world.resource::<MatchTimer>();
-        v[7] = (timer.phase == MatchPhase::Regular) as u8 as f32;
-        v[8] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
-        v[9] = (timer.phase == MatchPhase::Drain) as u8 as f32;
-        v[10] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
-
-        // 塔血：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
-        {
-            let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
-            for (t, h, k, tr) in q.iter(world) {
-                let same_side = t.faction == own_faction;
-                let mut x = tr.translation.x;
-                if flip {
-                    x = -x;
-                }
-                let side = match (same_side, k.is_some()) {
-                    (true, true) => 0,
-                    (true, false) => 1 + (x > 0.0) as usize,
-                    (false, true) => 3,
-                    (false, false) => 4 + (x > 0.0) as usize,
-                };
-                v[11 + side] = (h.current / h.max).clamp(0.0, 1.0);
-            }
-        }
-
-        // 单位：flip 时阵营标签互换、坐标 180° 旋转
-        {
-            let mut q = world.query::<(&Monster, &Health, &Transform)>();
-            for (i, (m, h, tr)) in q.iter(world).take(MAX_OBS_UNITS).enumerate() {
-                let base = 17 + i * 5;
-                let (fac, mut x, mut z) = (m.faction.index() as f32, tr.translation.x, tr.translation.z);
-                if flip {
-                    x = -x;
-                    z = -z;
-                }
-                v[base] = if flip { 1.0 - fac } else { fac };
-                v[base + 1] = m.damage / 200.0;
-                v[base + 2] = x / 9.0;
-                v[base + 3] = z / 15.0;
-                v[base + 4] = (h.current / h.max).clamp(0.0, 1.0);
-            }
-        }
-        v
+        compute_obs(self.app.world_mut(), flip)
     }
 
     pub fn tick(&self) -> u32 {
         self.app.world().resource::<Tick>().0
+    }
+
+    /// 访问内部 ECS World（cr_py / 游戏内机器人用）
+    pub fn world_mut(&mut self) -> &mut World {
+        self.app.world_mut()
+    }
+
+    pub fn world(&self) -> &World {
+        self.app.world()
     }
 
     /// 某方手牌槽位对应的卡 id（动作掩码用）

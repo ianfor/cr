@@ -3,6 +3,7 @@
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
+use crate::bot::BotMode;
 use crate::cards::{self, SelectedCard};
 use crate::components::*;
 use crate::constants::*;
@@ -19,6 +20,7 @@ pub fn gather_input(
     selected: Res<SelectedCard>,
     buttons: Query<&Interaction, With<Button>>,
     towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
+    bot_mode: Option<Res<BotMode>>,
     mut pending: ResMut<PendingClicks>,
     net: Option<Res<NetClient>>,
 ) {
@@ -61,6 +63,18 @@ pub fn gather_input(
                 .collect();
             if !cards::deploy_allowed(f, point, &tower_snaps) {
                 return; // 区域不可部署：无效操作
+            }
+            f
+        }
+        // PvE（有机器人）：玩家固定蓝方，部署区域同样按规则校验
+        None if bot_mode.is_some() => {
+            let f = Faction::Player;
+            let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
+                .iter()
+                .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+                .collect();
+            if !cards::deploy_allowed(f, point, &tower_snaps) {
+                return;
             }
             f
         }

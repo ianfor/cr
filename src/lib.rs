@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod bot;
 pub mod cards;
 pub mod combat;
 pub mod components;

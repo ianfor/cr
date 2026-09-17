@@ -884,6 +884,7 @@ dependencies = [
  "bevy",
  "bincode",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

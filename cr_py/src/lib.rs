@@ -1,51 +1,14 @@
 //! PyO3 封装：把 SimWorld 暴露给 Python 训练框架
 //!
 //! 接口设计：
-//! - 动作是整数索引：4 卡槽 × 112 部署格 + 1 不出牌 = 449
+//! - 动作是整数索引：4 卡槽 × 112 部署格 + 1 不出牌（sim_env::N_ACTIONS）
 //! - 部署格 ↔ 坐标的映射、动作合法性掩码都在 Rust 侧算好
 //!   （Python 只跟索引打交道，不需要懂游戏规则）
 
-use bevy_hello::cards::deploy_allowed;
 use bevy_hello::components::Faction;
-use bevy_hello::constants::CARDS;
-use bevy_hello::sim_env::{EnvAction, SimWorld, OBS_SIZE};
+use bevy_hello::sim_env::{idx_to_action, SimWorld, N_ACTIONS, OBS_SIZE};
 use pyo3::prelude::*;
 
-/// 部署网格：8 列 × 14 行，覆盖自己半场
-pub const N_COLS: usize = 8;
-pub const N_ROWS: usize = 14;
-pub const N_CELLS: usize = N_COLS * N_ROWS;
-pub const N_ACTIONS: usize = 4 * N_CELLS + 1;
-
-fn faction_sign(faction: Faction) -> f32 {
-    match faction {
-        Faction::Player => -1.0,
-        Faction::Enemy => 1.0,
-    }
-}
-
-/// 格子 → 世界坐标（x 列均分 [-7,7]，z 行覆盖 [sign*2, sign*14]）
-fn cell_to_pos(faction: Faction, cell: usize) -> (f32, f32) {
-    let col = (cell % N_COLS) as f32;
-    let row = (cell / N_COLS) as f32;
-    let x = -7.0 + col * (14.0 / (N_COLS - 1) as f32);
-    let z = faction_sign(faction) * (2.0 + row * (12.0 / (N_ROWS - 1) as f32));
-    (x, z)
-}
-
-fn idx_to_action(faction: Faction, idx: usize) -> Option<EnvAction> {
-    if idx >= 4 * N_CELLS {
-        return None; // 不出牌
-    }
-    let (x, z) = cell_to_pos(faction, idx % N_CELLS);
-    Some(EnvAction {
-        slot: idx / N_CELLS,
-        x,
-        z,
-    })
-}
-
-// unsendable：bevy App 内含非 Send 成员；GIL 保证单线程访问即可
 #[pyclass(unsendable)]
 struct CrEnv {
     world: SimWorld,
@@ -116,26 +79,7 @@ impl CrEnv {
         } else {
             Faction::Enemy
         };
-        let elixir = self.world.elixir(faction);
-        let towers = self.world.tower_snaps();
-        let mut mask = vec![false; N_ACTIONS];
-        for slot in 0..4 {
-            let Some(card_id) = self.world.hand_card(faction, slot) else {
-                continue;
-            };
-            let cost = CARDS[card_id as usize].cost;
-            if elixir < cost {
-                continue;
-            }
-            for cell in 0..N_CELLS {
-                let (x, z) = cell_to_pos(faction, cell);
-                if deploy_allowed(faction, bevy::math::Vec3::new(x, 0.0, z), &towers) {
-                    mask[slot * N_CELLS + cell] = true;
-                }
-            }
-        }
-        mask[N_ACTIONS - 1] = true; // 不出牌永远合法
-        mask
+        bevy_hello::sim_env::action_mask(self.world.world_mut(), faction)
     }
 }
 

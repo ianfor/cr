@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 
+use bevy_hello::bot::{BotMode, BotPolicy, BotState};
 use bevy_hello::cards::SelectedCard;
 use bevy_hello::components::{CommandBuffer, CommandLog, Decks, Elixir, PendingClicks, Tick};
 use bevy_hello::constants::{ELIXIR_START, TICKS_PER_SEC};
 use bevy_hello::match_flow::MatchTimer;
 use bevy_hello::net::{OwnHashes, SimState};
 use bevy_hello::replay::{ReplayControl, ReplayLog, ReplayMode, SimTick};
-use bevy_hello::{arena, cards, combat, deploy_zone, elixir, health_bar, match_flow, net, replay};
+use bevy_hello::{arena, bot, cards, combat, deploy_zone, elixir, health_bar, match_flow, net, replay};
 
 /// 玩家身份 token：持久化到 player_token.txt，断线重连凭它认领座位
 /// 同机开多个客户端测试时用 PLAYER_TOKEN 环境变量区分
@@ -37,11 +38,27 @@ fn main() {
         .as_deref()
         .and_then(replay::load_replay_file);
 
+    // PvE 模式：BOT_MODEL=<导出的权重JSON> 时机器人执红（玩家锁蓝方）
+    let bot_policy = std::env::var("BOT_MODEL")
+        .ok()
+        .and_then(|path| {
+            let p = BotPolicy::load(&path);
+            if p.is_some() {
+                println!("PvE 模式：机器人已加载 {path}（你执蓝方）");
+            } else {
+                println!("BOT_MODEL={path} 加载失败，进入普通单机");
+            }
+            p
+        });
+
     // 连接中继服务器：默认 127.0.0.1:9700、房间 1，用 RELAY_ADDR / ROOM 环境变量覆盖
     // 连不上就进入单机模式（无屏障，点哪边半场出哪边的怪）
     let (net_client, sim_state) = if replay_log.is_some() {
         println!("回放模式：{}", replay_path.as_deref().unwrap());
         (None, SimState::Replaying)
+    } else if bot_policy.is_some() {
+        // PvE 不联网
+        (None, SimState::Solo)
     } else {
         let addr = std::env::var("RELAY_ADDR").unwrap_or_else(|_| "127.0.0.1:9700".into());
         let room: u32 = std::env::var("ROOM")
@@ -102,6 +119,7 @@ fn main() {
     .add_systems(Update, net::receive)
     .add_systems(Update, arena::flip_camera_for_enemy)
     .add_systems(Update, cards::select_card_input)
+    .add_systems(Update, bot::bot_think)
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
     // 确定性模拟链挂在 SimTick：实时由 drive_sim 按 30Hz 驱动，
@@ -148,6 +166,11 @@ fn main() {
 
     if let Some(client) = net_client {
         app.insert_resource(client);
+    }
+    if let Some(policy) = bot_policy {
+        app.insert_resource(BotMode)
+            .insert_resource(policy)
+            .init_resource::<BotState>();
     }
     if replay_log.is_some() {
         app.insert_resource(replay_log.unwrap())

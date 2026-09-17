@@ -11,4 +11,5 @@ members = ["cr_py"]
 # 注：dynamic_linking 在 Windows 受 PE 65535 导出符号上限无法使用，勿开
 bevy = { version = "0.19", default-features = false, features = ["3d", "ui"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 bincode = "1.3"
