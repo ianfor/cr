@@ -53,8 +53,8 @@ class SelfPlayEnv(gym.Env):
             if np.random.rand() < 0.75:
                 return NOOP
             return int(np.random.randint(N_ACTIONS))
-        # mix：课程对手
-        if np.random.rand() < 0.7:
+        # mix：课程对手（50% 脚本组合拳结构性压力 + 50% 随机节奏多样性）
+        if np.random.rand() < 0.5:
             return int(self.inner.scripted_action(1))
         if np.random.rand() < 0.75:
             return NOOP
