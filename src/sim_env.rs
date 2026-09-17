@@ -28,8 +28,11 @@ pub struct EnvAction {
 pub const STEP_TICKS: u32 = 15;
 /// 观测向量中记录的最多单位数
 const MAX_OBS_UNITS: usize = 20;
-/// 观测向量长度
-pub const OBS_SIZE: usize = 17 + MAX_OBS_UNITS * 5;
+/// 观测向量长度 = 全局 42 维 + 单位 20 × 8 维
+/// 全局：圣水(存量×2/回复进度/倍率) 4 + 手牌 4 张卡种 one-hot 16 + 下一张 one-hot 4
+///       + 阶段 one-hot 3 + 计时 1 + 塔血 6 + 塔交战 6 + 双方单位计数 2
+/// 单位：阵营 1 + 卡种 one-hot 4 + 坐标 2 + 血量 1
+pub const OBS_SIZE: usize = 42 + MAX_OBS_UNITS * 8;
 
 // ===== 动作空间映射（训练与游戏内机器人共用） =====
 /// 部署网格列数/行数：覆盖自己半场
@@ -120,6 +123,15 @@ pub fn action_mask(world: &mut World, faction: Faction) -> Vec<bool> {
 }
 
 /// 定长观测向量：flip=false 蓝方视角，flip=true 红方镜像视角
+///
+/// 布局（索引）：
+/// 0-3   圣水：己方存量、对方存量、己方距下一点进度、回复倍率(/3)
+/// 4-23  手牌 4 张 + 下一张，各占卡种 one-hot(CARDS.len())=4 维
+/// 24-27 对局阶段 one-hot(3) + 剩余时间
+/// 28-33 塔血：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
+/// 34-39 塔交战状态：是否锁定目标（有目标=1）
+/// 40-41 双方场上单位数(/MAX_OBS_UNITS)
+/// 42+   单位 ×20：阵营、卡种 one-hot(4)、x(/9)、z(/15)、血量
 pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     let mut v = vec![0.0f32; OBS_SIZE];
 
@@ -131,6 +143,10 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     };
     v[0] = own_e / ELIXIR_MAX;
     v[1] = opp_e / ELIXIR_MAX;
+    v[2] = own_e.fract();
+
+    let timer = world.resource::<MatchTimer>();
+    v[3] = match_flow::elixir_multiplier(&timer) / 3.0;
 
     let own_faction = if flip {
         Faction::Enemy
@@ -139,18 +155,18 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     };
     let decks = world.resource::<Decks>();
     let queue = decks.queue(own_faction);
-    for (i, c) in queue.iter().take(HAND_SIZE).enumerate() {
-        v[2 + i] = *c as f32 / (CARDS.len() - 1) as f32;
+    // 手牌 4 张 + 下一张（各 4 维 one-hot）
+    for (i, c) in queue.iter().take(HAND_SIZE + 1).enumerate() {
+        let base = 4 + i * CARDS.len();
+        v[base + (*c as usize).min(CARDS.len() - 1)] = 1.0;
     }
-    v[6] = queue[HAND_SIZE] as f32 / (CARDS.len() - 1) as f32;
 
-    let timer = world.resource::<MatchTimer>();
-    v[7] = (timer.phase == MatchPhase::Regular) as u8 as f32;
-    v[8] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
-    v[9] = (timer.phase == MatchPhase::Drain) as u8 as f32;
-    v[10] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
+    v[24] = (timer.phase == MatchPhase::Regular) as u8 as f32;
+    v[25] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
+    v[26] = (timer.phase == MatchPhase::Drain) as u8 as f32;
+    v[27] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
 
-    // 塔血：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
+    // 塔血 + 交战状态：己方 王/左/右，对方 王/左/右（flip 时全场 180° 旋转，左右互换）
     {
         let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
         for (t, h, k, tr) in q.iter(world) {
@@ -165,30 +181,32 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
                 (false, true) => 3,
                 (false, false) => 4 + (x > 0.0) as usize,
             };
-            v[11 + side] = (h.current / h.max).clamp(0.0, 1.0);
+            v[28 + side] = (h.current / h.max).clamp(0.0, 1.0);
+            v[34 + side] = t.target.is_some() as u8 as f32;
         }
     }
 
     // 单位：flip 时阵营标签互换、坐标 180° 旋转
     {
+        let mut counts = [0usize; 2];
         let mut q = world.query::<(&Monster, &Health, &Transform)>();
         for (i, (m, h, tr)) in q.iter(world).take(MAX_OBS_UNITS).enumerate() {
-            let base = 17 + i * 5;
-            let (fac, mut x, mut z) = (
-                m.faction.index() as f32,
-                tr.translation.x,
-                tr.translation.z,
-            );
+            let base = 42 + i * 8;
+            let own = m.faction == own_faction;
+            let (mut x, mut z) = (tr.translation.x, tr.translation.z);
             if flip {
                 x = -x;
                 z = -z;
             }
-            v[base] = if flip { 1.0 - fac } else { fac };
-            v[base + 1] = m.damage / 200.0;
-            v[base + 2] = x / 9.0;
-            v[base + 3] = z / 15.0;
-            v[base + 4] = (h.current / h.max).clamp(0.0, 1.0);
+            v[base] = if own { 0.0 } else { 1.0 };
+            v[base + 1 + (m.card as usize).min(CARDS.len() - 1)] = 1.0;
+            v[base + 5] = x / 9.0;
+            v[base + 6] = z / 15.0;
+            v[base + 7] = (h.current / h.max).clamp(0.0, 1.0);
+            counts[own as usize] += 1;
         }
+        v[40] = counts[0] as f32 / MAX_OBS_UNITS as f32;
+        v[41] = counts[1] as f32 / MAX_OBS_UNITS as f32;
     }
     v
 }
@@ -467,6 +485,33 @@ impl SimWorld {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 观测布局完整性：维度正确、手牌/卡种 one-hot 结构、塔血/计数就位、镜像视角维度一致
+    #[test]
+    fn obs_layout_is_sound() {
+        let mut w = SimWorld::new();
+        let obs = w.obs();
+        assert_eq!(obs.len(), OBS_SIZE);
+        // 手牌 4 张 + 下一张：5 组 one-hot，各恰好一个 1
+        for i in 0..5 {
+            let block = &obs[4 + i * 4..4 + (i + 1) * 4];
+            assert_eq!(block.iter().sum::<f32>(), 1.0, "第 {} 组卡种应为 one-hot", i);
+            assert!(block.iter().all(|&x| x == 0.0 || x == 1.0));
+        }
+        // 初始塔满血、未交战
+        assert!(obs[28..34].iter().all(|&x| x == 1.0));
+        assert!(obs[34..40].iter().all(|&x| x == 0.0));
+        // 场上无单位
+        assert_eq!(obs[40], 0.0);
+        assert_eq!(obs[41], 0.0);
+        // 圣水初值 5/10
+        assert_eq!(obs[0], ELIXIR_START / ELIXIR_MAX);
+        // 红方镜像视角：维度一致，圣水字段取自红方
+        let red = w.obs_for(Faction::Enemy);
+        assert_eq!(red.len(), OBS_SIZE);
+        assert_eq!(red[0], obs[1]);
+        assert_eq!(red[1], obs[0]);
+    }
 
     /// 随机策略自对弈：环境能跑完整局并给出胜负
     #[test]

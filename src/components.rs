@@ -39,6 +39,8 @@ pub fn faction_color(faction: Faction) -> Color {
 #[derive(Component)]
 pub struct Monster {
     pub faction: Faction,
+    /// 卡牌 id（CARDS 中的索引）：观测用单位类型标识，不参与模拟逻辑
+    pub card: u8,
     // 以下属性由卡牌规格决定
     pub damage: f32,
     /// 攻击范围（边缘距离）

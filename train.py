@@ -16,7 +16,8 @@ import cr_py
 
 N_ACTIONS = 449
 NOOP = N_ACTIONS - 1
-OBS_SIZE = 117
+# 观测维度从 Rust 侧取，跟 compute_obs 布局保持单一事实来源
+OBS_SIZE = cr_py.CrEnv.short(2700).obs_size
 MODEL_DIR = Path("models")
 
 

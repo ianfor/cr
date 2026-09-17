@@ -12,7 +12,7 @@ use crate::sim_env::{self, NOOP_ACTION};
 #[derive(Resource)]
 pub struct BotMode;
 
-/// 导出的 MLP 策略权重（SB3 MlpPolicy：117 → 128 → 128 → 449）
+/// 导出的 MLP 策略权重（SB3 MlpPolicy：OBS_SIZE → 128 → 128 → 449）
 #[derive(Resource)]
 pub struct BotPolicy {
     w0: Vec<Vec<f32>>,
@@ -59,8 +59,19 @@ impl BotPolicy {
     pub fn load(path: &str) -> Option<Self> {
         let text = std::fs::read_to_string(path).ok()?;
         let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let w0 = json_matrix(&v, "w0")?;
+        // 维度守卫：权重必须与当前观测布局匹配（旧 117 维权重对新观测会静默乱推）
+        if w0.first().map_or(true, |row| row.len() != sim_env::OBS_SIZE) {
+            error!(
+                "bot 权重输入维 {:?} != 当前观测维 {}（模型与代码版本不匹配）：{}",
+                w0.first().map(Vec::len),
+                sim_env::OBS_SIZE,
+                path
+            );
+            return None;
+        }
         Some(Self {
-            w0: json_matrix(&v, "w0")?,
+            w0,
             b0: json_vector(&v, "b0")?,
             w1: json_matrix(&v, "w1")?,
             b1: json_vector(&v, "b1")?,

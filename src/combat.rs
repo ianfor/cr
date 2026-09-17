@@ -707,6 +707,7 @@ mod tests {
         world.spawn((
             Monster {
                 faction,
+                card: 0,
                 damage: 100.0,
                 attack_range: 0.75,
                 aggro_range: 5.0,
@@ -841,6 +842,7 @@ mod aggro_tests {
 
         let mk = |faction: Faction| Monster {
             faction,
+            card: 0,
             damage: 100.0,
             attack_range: 0.75,
             aggro_range: 5.0,
@@ -896,6 +898,7 @@ mod lock_retarget_tests {
     fn mk(faction: Faction) -> Monster {
         Monster {
             faction,
+            card: 0,
             damage: 100.0,
             attack_range: 0.75,
             aggro_range: 5.0,
@@ -964,6 +967,7 @@ mod engaged_lock_tests {
     fn mk(faction: Faction) -> Monster {
         Monster {
             faction,
+            card: 0,
             damage: 100.0,
             attack_range: 0.75,
             aggro_range: 5.0,
@@ -1030,6 +1034,7 @@ mod interrupt_tests {
     fn mk(faction: Faction) -> Monster {
         Monster {
             faction,
+            card: 0,
             damage: 100.0,
             attack_range: 0.75,
             aggro_range: 5.0,
@@ -1100,6 +1105,7 @@ mod steering_tests {
     fn mk_with_mass(faction: Faction, mass: f32) -> Monster {
         Monster {
             faction,
+            card: 0,
             damage: 100.0,
             attack_range: 0.75,
             aggro_range: 5.0,

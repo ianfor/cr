@@ -206,6 +206,7 @@ pub fn process_deploying(
                     &mut meshes,
                     &mut materials,
                     d.faction,
+                    d.card,
                     &spec.monster,
                     Vec3::new(pos.x, 0.0, pos.z),
                 );
@@ -220,6 +221,7 @@ fn spawn_unit(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     faction: Faction,
+    card: u8,
     spec: &MonsterSpec,
     pos: Vec3,
 ) {
@@ -228,6 +230,7 @@ fn spawn_unit(
     let mut e = commands.spawn((
         Monster {
             faction,
+            card,
             damage: spec.damage,
             attack_range: spec.attack_range,
             aggro_range: spec.aggro_range,
