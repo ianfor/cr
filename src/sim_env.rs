@@ -603,6 +603,116 @@ impl SimWorld {
         self.obs_impl(faction == Faction::Enemy)
     }
 
+    /// 重放一局单机录像，抽取指定阵营（人类玩家）的 BC 决策点样本：
+    /// 每 0.5 秒窗口一个 (视角观测, 玩家实际动作索引)。
+    /// 窗口内无出牌 → NOOP 样本（教"什么时候不出"的节奏直觉）；
+    /// 多条出牌取首条（手牌槽位按窗口起点状态查询，与 obs 一致）。
+    ///
+    /// 单机/BotMode 局牌库固定种子 42（replays 由 save_replay_on_game_over
+    /// 自动落盘）；联网局种子未入录像无法重建——若注入指令数 ≠ 实际执行数
+    /// （play_card 拒收 = 牌库偏离），调用方应丢弃该局。
+    /// 返回 (样本, 注入指令数, 实际执行数)
+    pub fn bc_replay(
+        &mut self,
+        path: &str,
+        player: Faction,
+    ) -> Option<(Vec<(Vec<f32>, usize)>, usize, usize)> {
+        let log = crate::replay::load_replay_file(path)?;
+        let end_tick = log.target.max(log.map.keys().copied().max().unwrap_or(0));
+        let total: usize = log.map.values().map(|v| v.len()).sum();
+
+        // 还原真实对局状态：固定种子 + 不对称牌库（训练用的对称牌库是
+        // SimWorld::reset 的训练专用行为，真实单机局双方各自洗牌）
+        self.reset(42);
+        *self.app.world_mut().resource_mut::<Decks>() = Decks::shuffled_with(42);
+
+        let mut samples: Vec<(Vec<f32>, usize)> = Vec::new();
+        let flip = player == Faction::Enemy;
+        let mut tick = 0u32;
+        loop {
+            if matches!(
+                *self.app.world().resource::<SimState>(),
+                SimState::GameOver(_)
+            ) || tick > end_tick
+            {
+                break;
+            }
+            // 1) 玩家在本窗口的指令（取首条）→ 标签 (card, x, z)
+            let mut label = None;
+            for t in tick..tick + STEP_TICKS {
+                if let Some(cmds) = log.map.get(&t) {
+                    for c in cmds {
+                        if let GameCommand::Deploy { faction, card, x, z } = *c {
+                            if faction == player && label.is_none() {
+                                label = Some((card, x, z));
+                            }
+                        }
+                    }
+                }
+            }
+            // 2) obs + 标签 → 动作索引样本
+            //    手牌对不上 = 重建偏离 → 跳过本窗口
+            let mut sample: Option<usize> = Some(NOOP_ACTION);
+            if let Some((card, x, z)) = label {
+                let slot = (0..HAND_SIZE)
+                    .find(|&s| hand_card(self.app.world_mut(), player, s) == Some(card));
+                if let Some(slot) = slot {
+                    // 点击坐标 → 最近部署格
+                    let mut best = (0usize, f32::MAX);
+                    for cell in 0..N_CELLS {
+                        let (cx, cz) = cell_to_pos(player, cell);
+                        let d = (cx - x) * (cx - x) + (cz - z) * (cz - z);
+                        if d < best.1 {
+                            best = (cell, d);
+                        }
+                    }
+                    sample = Some(slot * N_CELLS + best.0);
+                } else {
+                    sample = None;
+                }
+            }
+            if let Some(action) = sample {
+                let obs = compute_obs(self.app.world_mut(), flip);
+                let mask = action_mask(self.app.world_mut(), player);
+                if action == NOOP_ACTION || mask[action] {
+                    samples.push((obs, action));
+                }
+            }
+
+            // 3) 注入本窗口双方全部指令（按录像原始帧号）
+            for t in tick..tick + STEP_TICKS {
+                if let Some(cmds) = log.map.get(&t) {
+                    for c in cmds {
+                        self.app
+                            .world_mut()
+                            .resource_mut::<CommandBuffer>()
+                            .local
+                            .entry(t)
+                            .or_default()
+                            .push(*c);
+                    }
+                }
+            }
+            // 4) 推进一个决策窗口
+            let end = tick + STEP_TICKS - 1;
+            loop {
+                if matches!(
+                    *self.app.world().resource::<SimState>(),
+                    SimState::GameOver(_)
+                ) {
+                    break;
+                }
+                let _ = self.app.world_mut().try_run_schedule(SimTick);
+                if self.app.world().resource::<Tick>().0 >= end {
+                    break;
+                }
+            }
+            tick += STEP_TICKS;
+        }
+        let executed = self.app.world().resource::<CommandLog>().0.len();
+        Some((samples, total, executed))
+    }
+
     fn obs_impl(&mut self, flip: bool) -> Vec<f32> {
         compute_obs(self.app.world_mut(), flip)
     }

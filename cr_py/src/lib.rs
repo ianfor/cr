@@ -92,6 +92,22 @@ impl CrEnv {
         };
         bevy_hello::sim_env::scripted_action(self.world.world_mut(), faction)
     }
+
+    /// 重放单机录像抽取 BC 决策点样本（player: 0=蓝 1=红，人类玩家阵营）。
+    /// 返回 (样本列表[(obs, action)], 注入指令数, 实际执行数)；
+    /// 注入 != 执行 = 牌库偏离（联网局无种子），该局应作废
+    fn bc_replay(
+        &mut self,
+        path: &str,
+        player: u8,
+    ) -> Option<(Vec<(Vec<f32>, usize)>, usize, usize)> {
+        let faction = if player == 0 {
+            Faction::Player
+        } else {
+            Faction::Enemy
+        };
+        self.world.bc_replay(path, faction)
+    }
 }
 
 #[pymodule]
