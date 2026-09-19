@@ -28,3 +28,8 @@ screen_orientation = "portrait"
 [[example]]
 name = "android"
 crate-type = ["cdylib"]
+
+# release 签名（keystore 文件已 gitignore；密码见本机 keytool 生成记录）
+[package.metadata.android.signing.release]
+path = "android-release.jks"
+keystore_password = "crarena2026"

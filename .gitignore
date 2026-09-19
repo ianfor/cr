@@ -11,3 +11,4 @@ player_token.txt
 /.venv
 /models
 __pycache__
+android-release.jks
