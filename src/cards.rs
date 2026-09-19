@@ -257,6 +257,10 @@ fn spawn_unit(
 }
 
 /// 卡槽 UI：底部 4 张手牌 + 右侧下一张预览（在圣水条上方）
+///
+/// 弹性布局适配任意屏宽（手机逻辑宽 ~380px 塞不下 4×108 固定宽 + 预览）：
+/// 卡槽 flex_grow 均分剩余空间，预览固定窄列不许压缩——
+/// 否则 flexbox 按文字宽度挤压按钮，尺寸随卡名变化抖动
 pub fn setup_ui(mut commands: Commands) {
     commands
         .spawn(Node {
@@ -275,8 +279,11 @@ pub fn setup_ui(mut commands: Commands) {
                     Button,
                     CardSlot { index: i },
                     Node {
-                        width: Val::Px(108.0),
-                        height: Val::Px(84.0),
+                        // 均分剩余宽度：窄屏自动变窄，宽屏自动变宽，四张永远等大
+                        flex_grow: 1.0,
+                        flex_basis: Val::Px(0.0),
+                        flex_shrink: 0.0,
+                        height: Val::Percent(100.0),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         border: UiRect::all(Val::Px(3.0)),
@@ -290,25 +297,26 @@ pub fn setup_ui(mut commands: Commands) {
                         CardSlotText { index: i },
                         Text::new(""),
                         TextFont {
-                            font_size: FontSize::Px(16.0),
+                            font_size: FontSize::Px(14.0),
                             ..default()
                         },
                         TextColor(Color::WHITE),
                     ));
                 });
             }
-            // 下一张预览
+            // 下一张预览：固定窄列，不参与伸缩
             p.spawn((
                 NextCardText,
                 Text::new(""),
                 TextFont {
-                    font_size: FontSize::Px(12.0),
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.7, 0.7, 0.7)),
                 Node {
+                    width: Val::Px(52.0),
+                    flex_shrink: 0.0,
                     align_self: AlignSelf::Center,
-                    margin: UiRect::left(Val::Px(8.0)),
                     ..default()
                 },
             ));

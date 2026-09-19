@@ -38,8 +38,12 @@ pub fn setup(
         Camera3d::default(),
         IsDefaultUiCamera,
         Projection::Orthographic(OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: 34.0,
+            // AutoMin：宽、高都不小于下限，比例不变。
+            // PC 540×960 时等价于原 FixedVertical(34)；手机长窄屏（逻辑宽 ~405）
+            // 若仍固定高度，横向视野只剩 ~15 世界单位 < 场地宽（~18），左右被裁
+            scaling_mode: ScalingMode::AutoMin {
+                min_width: 19.0,
+                min_height: 34.0,
             },
             ..OrthographicProjection::default_3d()
         }),
