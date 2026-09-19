@@ -16,6 +16,7 @@ pub fn gather_input(
     window: Single<&Window>,
     camera: Single<(&Camera, &GlobalTransform)>,
     mouse: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
     decks: Res<Decks>,
     selected: Res<SelectedCard>,
     buttons: Query<&Interaction, With<Button>>,
@@ -28,16 +29,19 @@ pub fn gather_input(
     if !matches!(*state, net::SimState::Solo | net::SimState::Playing) {
         return;
     }
-    if !mouse.just_pressed(MouseButton::Left) {
+    // 点击源：鼠标按下（PC）或触摸按下（Android）——同一套处理
+    let click = if mouse.just_pressed(MouseButton::Left) {
+        window.cursor_position()
+    } else {
+        touches.iter_just_pressed().next().map(|t| t.position())
+    };
+    let Some(cursor) = click else {
         return;
-    }
+    };
     // 点在 UI（卡槽按钮）上：那是选牌操作，不在场景放怪
     if buttons.iter().any(|i| *i != Interaction::None) {
         return;
     }
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
     let (camera, camera_transform) = *camera;
     let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
         return;

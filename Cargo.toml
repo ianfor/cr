@@ -9,7 +9,22 @@ members = ["cr_py"]
 [dependencies]
 # 精简特性：只要 3D + UI，砍掉 audio/gltf/动画/纹理编解码（本项目都没用）
 # 注：dynamic_linking 在 Windows 受 PE 65535 导出符号上限无法使用，勿开
-bevy = { version = "0.19", default-features = false, features = ["3d", "ui"] }
+# android-native-activity：安卓 winit 后端（依赖按 target 门控，Windows 构建不受影响）
+bevy = { version = "0.19", default-features = false, features = ["3d", "ui", "android-native-activity"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode = "1.3"
+
+# cargo apk build 读取的安卓打包配置（版本号从 [package].version 推导，
+# cargo-apk 0.10 不允许显式设置 version_name/version_code）
+[package.metadata.android]
+package = "com.ianfor.crarena"
+app_name = "CR Arena"
+min_sdk_version = 26
+target_sdk_version = 34
+# 游戏为竖屏构图（540×960）
+screen_orientation = "portrait"
+
+[[example]]
+name = "android"
+crate-type = ["cdylib"]
