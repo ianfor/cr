@@ -946,6 +946,42 @@ mod tests {
         }
     }
 
+    /// 全链路冒烟：PendingClicks → collect_inputs → apply_commands →
+    /// process_deploying → 实体落地（与真实游戏点击完全同路径）
+    /// 种子 42 手牌 = 墓碑(建筑)/王子(部队)/箭雨(法术)/骷髅(3只部队)
+    #[test]
+    fn pending_clicks_full_chain_deploys() {
+        let mut w = SimWorld::new();
+        w.reset(42);
+        for slot in 0..HAND_SIZE {
+            let card = w.hand_card(Faction::Player, slot).unwrap();
+            // 点前给满圣水：聚焦链路本身，不测圣水经济
+            w.world_mut().resource_mut::<Elixir>().player = ELIXIR_MAX;
+            w.world_mut()
+                .resource_mut::<PendingClicks>()
+                .0
+                .push(GameCommand::Deploy {
+                    faction: Faction::Player,
+                    card,
+                    x: 0.0,
+                    z: -5.0 - slot as f32,
+                });
+            // 跑一帧让 collect_inputs 打帧号入缓冲
+            let _ = w.world_mut().try_run_schedule(SimTick);
+        }
+        // 跑完 INPUT_DELAY + deploy_ticks，让全部虚影落地
+        for _ in 0..50 {
+            let _ = w.world_mut().try_run_schedule(SimTick);
+        }
+        let world = w.world_mut();
+        let mut monsters = world.query::<&Monster>();
+        let n_monsters = monsters.iter(world).count();
+        let mut buildings = world.query::<&BuildingCard>();
+        let n_buildings = buildings.iter(world).count();
+        assert_eq!(n_buildings, 1, "墓碑应落地为建筑实体");
+        assert_eq!(n_monsters, 4, "王子 1 + 骷髅 3（箭雨瞬发不出实体）");
+    }
+
     /// 随机策略自对弈：环境能跑完整局并给出胜负
     #[test]
     fn random_self_play_completes_episode() {

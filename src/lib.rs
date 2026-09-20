@@ -142,6 +142,8 @@ pub fn run_app() {
     .add_systems(Update, bot::bot_think)
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
+    // 法术施法特效（纯表现层）
+    .add_systems(Update, (combat::spell_fx_spawn, combat::spell_fx_update).chain())
     // 确定性模拟链挂在 SimTick：实时由 drive_sim 按 30Hz 驱动，
     // 追帧/回放由 drive_replay 连续驱动
     .add_systems(

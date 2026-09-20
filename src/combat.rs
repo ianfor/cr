@@ -179,6 +179,103 @@ pub fn advance_tick(mut tick: ResMut<Tick>) {
     tick.0 += 1;
 }
 
+// ===== 法术施法特效（纯表现层，Update 调度，不进模拟链） =====
+// 法术瞬发不出实体，没有任何视觉反馈会让人以为"没反应"——
+// 这里从指令日志增量检测法术释放，在施法点放一个扩散光环。
+// 不读写任何模拟状态（CommandLog 只读），VFX 实体不带模拟组件，
+// 不影响帧同步确定性与训练环境（sim_env 不跑 Update）。
+
+/// 扩散光环特效
+#[derive(Component)]
+pub struct SpellFx {
+    /// 已播放秒数
+    t: f32,
+    /// 总时长
+    duration: f32,
+    /// 扩散终半径（= 法术作用半径，略放大）
+    end_radius: f32,
+}
+
+/// 法术卡的特效颜色
+fn spell_fx_color(card: u8) -> Color {
+    match card {
+        15 => Color::srgb(0.95, 0.95, 0.3),   // Zap 黄
+        16 => Color::srgb(0.95, 0.6, 0.2),    // Arrows 橙
+        17 => Color::srgb(0.95, 0.3, 0.15),   // Fireball 红
+        18 => Color::srgb(0.75, 0.3, 0.95),   // Rage 紫
+        _ => Color::WHITE,
+    }
+}
+
+/// 从指令日志增量检测法术释放 → 生成光环（含回放/追帧，cursor 自动追平）
+pub fn spell_fx_spawn(
+    mut commands: Commands,
+    log: Res<CommandLog>,
+    mut cursor: Local<usize>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // 世界重置后日志清空：cursor 回退到 0 重新跟（seek 回退重追时特效会重放，无害）
+    if *cursor > log.0.len() {
+        *cursor = log.0.len();
+    }
+    while *cursor < log.0.len() {
+        let (_, cmd) = log.0[*cursor];
+        *cursor += 1;
+        // GameCommand 目前只有 Deploy 一种，模式匹配保留扩展性
+        let GameCommand::Deploy { card, x, z, .. } = cmd;
+        let Some(spec) = CARDS.iter().find(|c| c.id == card) else {
+            continue;
+        };
+        let CardKind::Spell(spell) = &spec.kind else {
+            continue;
+        };
+        commands.spawn((
+            SpellFx {
+                t: 0.0,
+                duration: 0.45,
+                end_radius: spell.radius + 0.4,
+            },
+            Mesh3d(meshes.add(bevy::math::primitives::Torus::new(1.0, 0.06))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: spell_fx_color(card),
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            })),
+            Transform::from_translation(Vec3::new(x, 0.25, z))
+                .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            NotShadowCaster,
+        ));
+    }
+}
+
+/// 光环动画：半径 0 → end_radius 扩散，透明度淡出，播完销毁
+pub fn spell_fx_update(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut fx: Query<(
+        Entity,
+        &mut SpellFx,
+        &mut Transform,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (e, mut s, mut transform, mat) in &mut fx {
+        s.t += time.delta_secs();
+        let k = (s.t / s.duration).min(1.0);
+        let r = s.end_radius * k;
+        transform.scale = Vec3::new(r, r, 1.0);
+        if let Some(mut m) = materials.get_mut(&mat.0) {
+            m.base_color.set_alpha((1.0 - k) * 0.9);
+        }
+        if s.t >= s.duration {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
 /// 可被攻击单位的快照，避免索敌时嵌套查询
 struct UnitSnap {
     entity: Entity,
