@@ -19,7 +19,7 @@ pub struct TowerSpec {
 /// 模拟版本号：任何影响模拟结果的改动都必须 +1！
 /// 包括：数值调整、AI/寻路逻辑、地图结构、牌库洗牌、帧率。
 /// 录像回放只在本常量与录像文件中的版本一致时才保证结果正确。
-pub const SIM_VERSION: u32 = 1;
+pub const SIM_VERSION: u32 = 2;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）
@@ -56,12 +56,26 @@ pub const PRINCESS_Z: f32 = 8.5;
 
 // 战斗常量
 pub const TOWER_HP: f32 = 10000.0;
+/// 塔的攻击间隔（秒）；单位攻速由各卡 MonsterSpec.attack_interval 决定
 pub const ATTACK_INTERVAL: f32 = 1.0;
 pub const TOWER_ATTACK_DAMAGE: f32 = 200.0;
 pub const PROJECTILE_SPEED: f32 = 14.0;
 pub const PROJECTILE_RADIUS: f32 = 0.18;
 /// 推挤转向力上限（单位/秒）：密集时也只以这个速度被推开，防止"挤得闪现"
 pub const MAX_STEERING_FORCE: f32 = 4.0;
+/// 空中单位离地高度（纯表现，模拟逻辑只用 xz 平面）
+pub const FLY_HEIGHT: f32 = 1.6;
+
+/// 冲锋规格
+#[derive(Clone, Copy)]
+pub struct ChargeSpec {
+    /// 蓄力时长（秒）：持续移动累积，满后进入冲锋
+    pub windup_secs: f32,
+    /// 冲锋状态下的移速倍率
+    pub speed_mult: f32,
+    /// 冲锋首击伤害倍率
+    pub damage_mult: f32,
+}
 
 /// 怪物个体属性（由卡牌规格决定）
 pub struct MonsterSpec {
@@ -77,6 +91,104 @@ pub struct MonsterSpec {
     pub mass: f32,
     /// 是否远程（攻击时发射子弹而非直接扣血）
     pub ranged: bool,
+    /// 攻击间隔（秒）——各卡独立，骑士 1.0s 为数值锚
+    pub attack_interval: f32,
+    /// 溅射半径（0 = 单体伤害）
+    pub splash_radius: f32,
+    /// 能否攻击空中单位
+    pub hits_air: bool,
+    /// 是否飞行单位：无视河道/地面单位推挤，仅被 hits_air 的攻击命中
+    pub flying: bool,
+    /// 只攻击建筑（塔/建筑卡），无视怪物（巨人/野猪）
+    pub building_only: bool,
+    /// 冲锋机制（王子）
+    pub charge: Option<ChargeSpec>,
+}
+
+/// MonsterSpec 便捷构造（const 上下文用），未列字段取默认值
+const fn m(
+    hp: f32,
+    damage: f32,
+    attack_range: f32,
+    aggro_range: f32,
+    speed: f32,
+    radius: f32,
+    mass: f32,
+    ranged: bool,
+    attack_interval: f32,
+) -> MonsterSpec {
+    MonsterSpec {
+        hp,
+        damage,
+        attack_range,
+        aggro_range,
+        speed,
+        radius,
+        mass,
+        ranged,
+        attack_interval,
+        splash_radius: 0.0,
+        hits_air: ranged,
+        flying: false,
+        building_only: false,
+        charge: None,
+    }
+}
+
+/// 狂暴 buff 规格
+#[derive(Clone, Copy)]
+pub struct RageSpec {
+    /// 攻速/移速倍率
+    pub mult: f32,
+    /// 持续秒数
+    pub secs: f32,
+}
+
+/// 法术效果：瞬发，作用目标点 (x, z)
+pub struct SpellSpec {
+    /// 直接伤害（0 = 无伤害）
+    pub damage: f32,
+    /// 作用半径
+    pub radius: f32,
+    /// 晕眩秒数（打断冲锋与攻击；电击 0.5s）
+    pub stun_secs: f32,
+    /// 狂暴（对己方单位生效）
+    pub rage: Option<RageSpec>,
+}
+
+/// 建筑卡的攻击属性（加农炮/特斯拉类）
+#[derive(Clone, Copy)]
+pub struct BuildingAttack {
+    pub damage: f32,
+    /// 攻击范围（边缘距离，从建筑半径外缘起算）
+    pub range: f32,
+    pub interval: f32,
+    pub hits_air: bool,
+}
+
+/// 出兵建筑属性（墓碑类）
+#[derive(Clone, Copy)]
+pub struct BuildingSpawner {
+    /// 出兵间隔（秒）
+    pub interval_secs: f32,
+    /// 出的兵对应的卡 id（骷髅 = 1）
+    pub card_id: u8,
+}
+
+/// 建筑卡属性：部署于己方半场，有寿命，速度为 0
+pub struct BuildingSpec {
+    pub hp: f32,
+    /// 寿命（秒）：到时自毁（不返还圣水）
+    pub lifetime_secs: f32,
+    pub attack: Option<BuildingAttack>,
+    pub spawner: Option<BuildingSpawner>,
+}
+
+/// 卡牌类别
+pub enum CardKind {
+    Troop(MonsterSpec),
+    Spell(SpellSpec),
+    Building(BuildingSpec),
 }
 
 /// 卡牌定义
@@ -84,90 +196,65 @@ pub struct CardSpec {
     pub id: u8,
     pub name: &'static str,
     pub cost: f32,
-    /// 一次出兵数量
+    /// 一次出兵数量（仅 Troop）
     pub count: u32,
-    /// 放置时间（帧数，30 = 1 秒）：下卡后先出虚影，倒计时结束才变成真兵
+    /// 放置时间（帧数，30 = 1 秒）：下卡后先出虚影，倒计时结束才生效
     pub deploy_ticks: u32,
-    pub monster: MonsterSpec,
+    pub kind: CardKind,
 }
 
-/// 卡牌目录（UI 无中文字形，名字用英文）
-pub const CARDS: [CardSpec; 4] = [
-    // 骑士：均衡近战（原胶囊怪数值）
-    CardSpec {
-        id: 0,
-        name: "Knight",
-        cost: 3.0,
-        count: 1,
-        deploy_ticks: 30,
-        monster: MonsterSpec {
-            hp: 2000.0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
-            mass: 1.0,
-            ranged: false,
-        },
-    },
-    // 骷髅军团：1 费 3 只小骷髅，炮灰
-    CardSpec {
-        id: 1,
-        name: "Skeletons",
-        cost: 1.0,
-        count: 3,
-        deploy_ticks: 30,
-        monster: MonsterSpec {
-            hp: 300.0,
-            damage: 50.0,
-            attack_range: 0.45,
-            aggro_range: 2.0,
-            speed: 2.0,
-            radius: 0.3,
-            mass: 0.3,
-            ranged: false,
-        },
-    },
-    // 火枪手：远程单体
-    CardSpec {
-        id: 2,
-        name: "Musketeer",
-        cost: 4.0,
-        count: 1,
-        deploy_ticks: 30,
-        monster: MonsterSpec {
-            hp: 1000.0,
-            damage: 120.0,
-            attack_range: 4.0,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
-            mass: 0.8,
-            ranged: true,
-        },
-    },
-    // 巨人：高血低速坦克
-    CardSpec {
-        id: 3,
-        name: "Giant",
-        cost: 5.0,
-        count: 1,
-        deploy_ticks: 30,
-        monster: MonsterSpec {
-            hp: 5000.0,
-            damage: 150.0,
-            attack_range: 1.2,
-            aggro_range: 5.0,
-            speed: 1.0,
-            radius: 0.8,
-            mass: 3.0,
-            ranged: false,
-        },
-    },
+/// 卡牌目录（21 张，UI 无中文字形，名字用英文）
+/// 数值锚：3 费骑士 = 2000HP + 100DPS 白板近战（每费 667HP / 33DPS）
+pub const CARDS: [CardSpec; 21] = [
+    // ===== 地面基础 =====
+    // 骑士【锚】
+    CardSpec { id: 0, name: "Knight", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(2000.0, 100.0, 0.75, 5.0, 1.5, 0.5, 1.0, false, 1.0)) },
+    // 骷髅军团
+    CardSpec { id: 1, name: "Skeletons", cost: 1.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(300.0, 50.0, 0.45, 2.0, 2.0, 0.3, 0.3, false, 1.0)) },
+    // 火枪手（对空）
+    CardSpec { id: 2, name: "Musketeer", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1000.0, 120.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.0)) },
+    // 巨人：只攻击建筑（对齐真 CR）
+    CardSpec { id: 3, name: "Giant", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(5000.0, 150.0, 1.2, 5.0, 1.0, 0.8, 3.0, false, 1.5) }) },
+    // 哥布林
+    CardSpec { id: 4, name: "Goblins", cost: 2.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(360.0, 70.0, 0.45, 2.0, 2.5, 0.3, 0.4, false, 1.1)) },
+    // 弓箭手（对空）
+    CardSpec { id: 5, name: "Archers", cost: 3.0, count: 2, deploy_ticks: 30, kind: CardKind::Troop(m(450.0, 80.0, 4.0, 5.0, 1.5, 0.4, 0.6, true, 1.2)) },
+    // 迷你皮卡：慢攻速重击
+    CardSpec { id: 6, name: "MiniPEKKA", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1600.0, 350.0, 0.75, 5.0, 2.0, 0.5, 1.2, false, 1.8)) },
+    // 野蛮人
+    CardSpec { id: 7, name: "Barbarians", cost: 5.0, count: 4, deploy_ticks: 30, kind: CardKind::Troop(m(900.0, 100.0, 0.7, 5.0, 1.5, 0.45, 1.0, false, 1.4)) },
+    // ===== 只攻击建筑 =====
+    // 野猪骑士：快攻
+    CardSpec { id: 8, name: "HogRider", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(1600.0, 150.0, 0.9, 5.0, 2.5, 0.5, 1.2, false, 1.6) }) },
+    // ===== 冲锋 =====
+    // 王子：蓄力 2.5s → 移速×2、首击伤害×2（400）；受击不清零，攻击命中或被晕眩才清
+    CardSpec { id: 9, name: "Prince", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { charge: Some(ChargeSpec { windup_secs: 2.5, speed_mult: 2.0, damage_mult: 2.0 }), ..m(1900.0, 200.0, 0.9, 5.0, 1.5, 0.55, 1.5, false, 1.4) }) },
+    // ===== AOE =====
+    // 炸弹人：溅射仅对地
+    CardSpec { id: 10, name: "Bomber", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(400.0, 190.0, 3.5, 4.5, 1.5, 0.35, 0.5, true, 1.9) }) },
+    // 瓦基丽：360° 近战溅射仅对地
+    CardSpec { id: 11, name: "Valkyrie", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(1800.0, 210.0, 0.9, 5.0, 1.5, 0.55, 1.2, false, 1.5) }) },
+    // 法师：远程溅射对空对地
+    CardSpec { id: 12, name: "Wizard", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, ..m(1100.0, 182.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.4) }) },
+    // ===== 空军 =====
+    // 亡灵：飞行近战，可对空
+    CardSpec { id: 13, name: "Minions", cost: 3.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { flying: true, hits_air: true, ..m(320.0, 80.0, 0.45, 3.0, 2.0, 0.3, 0.3, false, 1.0) }) },
+    // 飞龙：飞行远程溅射，对空对地
+    CardSpec { id: 14, name: "BabyDragon", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, flying: true, ..m(1200.0, 160.0, 2.5, 4.0, 1.5, 0.6, 0.8, true, 1.6) }) },
+    // ===== 法术（瞬发，全场任意格子）=====
+    CardSpec { id: 15, name: "Zap", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 160.0, radius: 1.2, stun_secs: 0.5, rage: None }) },
+    CardSpec { id: 16, name: "Arrows", cost: 3.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 300.0, radius: 2.0, stun_secs: 0.0, rage: None }) },
+    CardSpec { id: 17, name: "Fireball", cost: 4.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 550.0, radius: 1.5, stun_secs: 0.0, rage: None }) },
+    // 狂暴：己方单位攻速/移速 +35%，持续 6s
+    CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { mult: 1.35, secs: 6.0 }) }) },
+    // ===== 建筑（仅己方半场可部署，有寿命）=====
+    // 加农炮：仅对地
+    CardSpec { id: 19, name: "Cannon", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 1400.0, lifetime_secs: 30.0, attack: Some(BuildingAttack { damage: 90.0, range: 5.0, interval: 0.9, hits_air: false }), spawner: None }) },
+    // 墓碑：每 4s 出 1 骷髅
+    CardSpec { id: 20, name: "Tombstone", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 800.0, lifetime_secs: 30.0, attack: None, spawner: Some(BuildingSpawner { interval_secs: 4.0, card_id: 1 }) }) },
 ];
 
-/// 牌库大小（4 种卡各两张，CR 为 8 张）
+/// 牌库大小（每局从 21 种卡随机抽 8 种，双方同池）
 pub const DECK_SIZE: usize = 8;
 /// 手牌数
 pub const HAND_SIZE: usize = 4;

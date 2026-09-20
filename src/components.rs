@@ -52,8 +52,81 @@ pub struct Monster {
     /// 质量：推挤时按质量分配力，大质量推开小质量
     pub mass: f32,
     pub ranged: bool,
-    /// 锁定的攻击目标：不切换，直到目标消失（死亡）才重新索敌
+    /// 溅射半径（0 = 单体）
+    pub splash_radius: f32,
+    /// 能否攻击空中单位
+    pub hits_air: bool,
+    /// 飞行单位：无视河道/地面推挤/塔碰撞
+    pub flying: bool,
+    /// 只攻击建筑（塔/建筑卡），索敌无视怪物
+    pub building_only: bool,
+    /// 锁定的攻击目标：不切换，直到目标消失（死亡）或被打断
     pub target: Option<Entity>,
+    /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
+    /// 未交战（走向远目标途中）不因距离解锁——否则每帧重新索敌，
+    /// 任何进入 aggro 的怪都会抢走目标（历史 bug：塔的优先级低于怪物）
+    pub engaged: bool,
+    /// 冲锋状态（王子）：progress 蓄满 windup 进入冲锋（移速×），
+    /// 攻击命中清零、被晕眩清零；受击不清零
+    pub charge: Option<ChargeState>,
+    /// 晕眩剩余秒数：无法移动/攻击，冲锋清零（电击等打断效果）
+    pub stun_secs: f32,
+    /// 狂暴剩余秒数：攻速/移速 ×rage_mult
+    pub rage_secs: f32,
+    pub rage_mult: f32,
+}
+
+/// 冲锋运行时状态
+#[derive(Clone, Copy, Debug)]
+pub struct ChargeState {
+    /// 已持续移动的秒数
+    pub progress: f32,
+    /// 蓄力阈值（秒）
+    pub windup: f32,
+    pub speed_mult: f32,
+    pub damage_mult: f32,
+}
+
+impl ChargeState {
+    /// 是否已蓄满进入冲锋
+    pub fn charged(&self) -> bool {
+        self.progress >= self.windup
+    }
+}
+
+/// 建筑卡的攻击属性（运行时副本）
+#[derive(Clone, Copy)]
+pub struct BuildingAttackState {
+    pub damage: f32,
+    pub range: f32,
+    pub interval: f32,
+    pub hits_air: bool,
+    /// 攻击计时（秒，倒计数）
+    pub cooldown: f32,
+    pub target: Option<Entity>,
+}
+
+/// 出兵建筑运行时状态
+#[derive(Clone, Copy)]
+pub struct BuildingSpawnerState {
+    pub interval_secs: f32,
+    pub card_id: u8,
+    /// 出兵倒计时（秒）
+    pub cooldown: f32,
+}
+
+/// 建筑卡实体（加农炮/墓碑）：部署于己方半场，有寿命，速度为 0。
+/// 可被怪物/只攻建筑单位当作目标（与塔同属"建筑"类）
+#[derive(Component)]
+pub struct BuildingCard {
+    pub faction: Faction,
+    /// 对应卡 id（观测网格/出兵用）
+    pub card: u8,
+    pub radius: f32,
+    /// 剩余寿命（秒）：归零自毁
+    pub lifetime: f32,
+    pub attack: Option<BuildingAttackState>,
+    pub spawner: Option<BuildingSpawnerState>,
 }
 
 #[derive(Component)]
@@ -94,11 +167,17 @@ pub struct Deploying {
 #[derive(Component)]
 pub struct AttackTimer(pub Timer);
 
-/// 国王塔发射的子弹（追踪目标的小球）
+/// 国王塔/远程单位发射的子弹（追踪目标的小球）
 #[derive(Component)]
 pub struct Projectile {
     pub target: Entity,
     pub damage: f32,
+    /// 溅射半径（0 = 单体）：命中时对攻击方阵营的敌人范围伤害
+    pub splash_radius: f32,
+    /// 攻击者能否对空（溅射是否波及空中单位）
+    pub hits_air: bool,
+    /// 攻击者阵营（溅射判定敌我）
+    pub attacker: Faction,
 }
 
 /// 血条根节点

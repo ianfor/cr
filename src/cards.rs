@@ -33,11 +33,37 @@ fn prand(seed: u32) -> f32 {
     (h % 1000) as f32 / 1000.0
 }
 
+/// 从全部卡种里确定性抽 DECK_SIZE 张组成牌池（部分 Fisher-Yates 取前缀）
+/// 双方共用同一牌池（各自洗牌序不同）：消除"一方没抽到法术/建筑"的结构性差距
+fn deck_pool(seed: u32) -> Vec<u8> {
+    let n = CARDS.len();
+    let mut all: Vec<u8> = (0..n as u8).collect();
+    for i in 0..DECK_SIZE {
+        let r = prand(seed.wrapping_add((i as u32).wrapping_mul(0x9E37)));
+        let j = i + (r * ((n - i) as f32)) as usize % (n - i);
+        all.swap(i, j);
+    }
+    all.truncate(DECK_SIZE);
+    all
+}
+
 /// 确定性洗牌（Fisher-Yates + prand）
 pub fn shuffled_deck(seed: u32) -> Vec<u8> {
-    let mut deck: Vec<u8> = (0..DECK_SIZE as u8).map(|i| i % CARDS.len() as u8).collect();
+    let mut deck = deck_pool(seed);
     for i in (1..deck.len()).rev() {
-        let j = (prand(seed.wrapping_add(i as u32)) * (i + 1) as f32) as usize % (i + 1);
+        let j = (prand(seed.wrapping_add((i as u32).wrapping_mul(31))) * (i + 1) as f32) as usize
+            % (i + 1);
+        deck.swap(i, j);
+    }
+    deck
+}
+
+/// 对给定牌池做确定性洗牌（双方共用池、不同序）
+fn shuffled_order(pool: &[u8], seed: u32) -> Vec<u8> {
+    let mut deck = pool.to_vec();
+    for i in (1..deck.len()).rev() {
+        let j = (prand(seed.wrapping_add((i as u32).wrapping_mul(31))) * (i + 1) as f32) as usize
+            % (i + 1);
         deck.swap(i, j);
     }
     deck
@@ -50,10 +76,12 @@ impl Decks {
     }
 
     /// 双方牌库（指定种子；联网对局由中继在 Start 中下发，逐局变化）
+    /// 双方共用同一 8 张牌池（消除结构性卡池差距），各自独立洗牌
     pub fn shuffled_with(seed: u32) -> Self {
+        let pool = deck_pool(seed);
         Self {
-            player: shuffled_deck(seed),
-            enemy: shuffled_deck(seed.wrapping_add(0x9E3779B9)),
+            player: shuffled_order(&pool, seed),
+            enemy: shuffled_order(&pool, seed.wrapping_add(0x9E3779B9)),
         }
     }
 
@@ -104,6 +132,29 @@ pub fn deploy_allowed(faction: Faction, pos: Vec3, towers: &[(Faction, bool, Vec
         .any(|(f, is_king, t)| *f != faction && !*is_king && (t.x < 0.0) == side_left)
 }
 
+/// 按卡类别的部署区域判定（采集侧与执行侧共用同一套规则）：
+/// - 部队：CR 规则（deploy_allowed）
+/// - 法术：瞬发，全场任意位置（含河道，AoE 打桥上的单位）
+/// - 建筑：仅己方半场（推塔也不开放敌半场），不含河道
+pub fn deploy_zone_ok(
+    spec: &CardSpec,
+    faction: Faction,
+    pos: Vec3,
+    towers: &[(Faction, bool, Vec3)],
+) -> bool {
+    match &spec.kind {
+        CardKind::Spell(_) => pos.x.abs() <= 8.0 && pos.z.abs() <= 14.0,
+        CardKind::Building(_) => {
+            let own_sign = match faction {
+                Faction::Player => -1.0,
+                Faction::Enemy => 1.0,
+            };
+            pos.z.signum() == own_sign && pos.z.abs() >= RIVER_HALF_WIDTH && pos.z.abs() <= 14.0
+        }
+        CardKind::Troop(_) => deploy_allowed(faction, pos, towers),
+    }
+}
+
 /// 出牌（帧同步链内执行）：校验部署区域、手牌与费用 → 扣费 → 牌循环 → 出兵
 /// 任何一步不满足都丢弃指令（两端状态一致，判定结果必然相同）
 #[allow(clippy::too_many_arguments)]
@@ -113,18 +164,24 @@ pub fn play_card(
     elixir: &mut Elixir,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    spell_targets: &mut Query<(
+        &mut Health,
+        &Transform,
+        Option<&mut Monster>,
+        Option<&BuildingCard>,
+    )>,
     faction: Faction,
     card_id: u8,
     pos: Vec3,
     towers: &[(Faction, bool, Vec3)],
 ) {
     // 部署区域权威校验（防改版客户端在区域外下怪；两端判定一致）
-    if !deploy_allowed(faction, pos, towers) {
-        return;
-    }
     let Some(spec) = CARDS.iter().find(|c| c.id == card_id) else {
         return;
     };
+    if !deploy_zone_ok(spec, faction, pos, towers) {
+        return;
+    }
     let queue = match faction {
         Faction::Player => &mut decks.player,
         Faction::Enemy => &mut decks.enemy,
@@ -145,23 +202,62 @@ pub fn play_card(
     let played = queue.remove(hand_pos);
     queue.push(played);
 
-    // 多单位围绕落点散开（固定偏移，确定性）
-    // 先出虚影，放置时间结束才变成真兵（process_deploying 处理）
-    const OFFSETS: [(f32, f32); 3] = [(0.0, 0.0), (-0.6, -0.5), (0.6, -0.5)];
-    for k in 0..spec.count as usize {
-        let (dx, dz) = OFFSETS[k % OFFSETS.len()];
-        spawn_ghost(
-            commands,
-            meshes,
-            materials,
-            faction,
-            spec,
-            pos + Vec3::new(dx, 0.0, dz),
-        );
+    match &spec.kind {
+        // 部队：先出虚影，放置时间结束才变成真兵（process_deploying 处理）
+        CardKind::Troop(_) => {
+            // 多单位围绕落点散开（固定偏移，确定性）
+            const OFFSETS: [(f32, f32); 3] = [(0.0, 0.0), (-0.6, -0.5), (0.6, -0.5)];
+            for k in 0..spec.count as usize {
+                let (dx, dz) = OFFSETS[k % OFFSETS.len()];
+                spawn_ghost(
+                    commands,
+                    meshes,
+                    materials,
+                    faction,
+                    spec,
+                    pos + Vec3::new(dx, 0.0, dz),
+                );
+            }
+        }
+        // 法术：瞬发，直接结算（伤害/晕眩对敌，狂暴对己）
+        CardKind::Spell(spell) => {
+            for (mut hp, tr, monster, building) in spell_targets.iter_mut() {
+                let target_faction = match (&monster, &building) {
+                    (Some(m), _) => m.faction,
+                    (None, Some(b)) => b.faction,
+                    _ => continue, // 塔等其余实体不吃法术
+                };
+                let mut d = tr.translation - pos;
+                d.y = 0.0;
+                if d.length() > spell.radius {
+                    continue;
+                }
+                if target_faction == faction {
+                    // 己方单位：狂暴（仅怪物）
+                    if let (Some(rage), Some(mut m)) = (&spell.rage, monster) {
+                        m.rage_secs = rage.secs;
+                        m.rage_mult = rage.mult;
+                    }
+                } else {
+                    // 敌方单位：伤害 + 晕眩（晕眩仅怪物）
+                    hp.current -= spell.damage;
+                    if let Some(mut m) = monster {
+                        if spell.stun_secs > 0.0 {
+                            m.stun_secs = m.stun_secs.max(spell.stun_secs);
+                        }
+                    }
+                }
+            }
+        }
+        // 建筑：先出虚影，放置时间结束生成建筑实体（process_deploying 处理）
+        CardKind::Building(_) => {
+            spawn_ghost(commands, meshes, materials, faction, spec, pos);
+        }
     }
 }
 
 /// 放置虚影：半透明胶囊 + Deploying 组件（不参与战斗/碰撞/索敌）
+/// 半径按卡类别取：部队=体型，建筑=固定小方块
 fn spawn_ghost(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -170,7 +266,10 @@ fn spawn_ghost(
     spec: &CardSpec,
     pos: Vec3,
 ) {
-    let r = spec.monster.radius;
+    let r = match &spec.kind {
+        CardKind::Troop(m) => m.radius,
+        _ => BUILDING_RADIUS,
+    };
     commands.spawn((
         Deploying {
             card: spec.id,
@@ -189,7 +288,7 @@ fn spawn_ghost(
     ));
 }
 
-/// 放置倒计时（帧同步链内）：虚影倒计时结束 → 变成真兵
+/// 放置倒计时（帧同步链内）：虚影倒计时结束 → 按卡类别生成真实体
 pub fn process_deploying(
     mut commands: Commands,
     mut deployers: Query<(Entity, &mut Deploying, &Transform)>,
@@ -201,22 +300,37 @@ pub fn process_deploying(
         if d.ticks_left == 0 {
             let pos = transform.translation;
             if let Some(spec) = CARDS.iter().find(|c| c.id == d.card) {
-                spawn_unit(
-                    &mut commands,
-                    &mut meshes,
-                    &mut materials,
-                    d.faction,
-                    d.card,
-                    &spec.monster,
-                    Vec3::new(pos.x, 0.0, pos.z),
-                );
+                let ground = Vec3::new(pos.x, 0.0, pos.z);
+                match &spec.kind {
+                    CardKind::Troop(ms) => spawn_unit(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        d.faction,
+                        d.card,
+                        ms,
+                        ground,
+                    ),
+                    CardKind::Building(bs) => spawn_building(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        d.faction,
+                        d.card,
+                        bs,
+                        ground,
+                    ),
+                    // 法术瞬发不产生虚影（play_card 直接结算），不会走到这里
+                    CardKind::Spell(_) => {}
+                }
             }
             commands.entity(e).despawn();
         }
     }
 }
 
-fn spawn_unit(
+/// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）
+pub fn spawn_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
@@ -226,6 +340,8 @@ fn spawn_unit(
     pos: Vec3,
 ) {
     let r = spec.radius;
+    // 飞行单位抬高（纯表现；模拟逻辑只在 xz 平面，y 不参与任何判定）
+    let lift = if spec.flying { FLY_HEIGHT } else { 0.0 };
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
         Monster {
@@ -238,22 +354,78 @@ fn spawn_unit(
             radius: r,
             mass: spec.mass,
             ranged: spec.ranged,
+            splash_radius: spec.splash_radius,
+            hits_air: spec.hits_air,
+            flying: spec.flying,
+            building_only: spec.building_only,
+            engaged: false,
             target: None,
+            charge: spec.charge.map(|c| ChargeState {
+                progress: 0.0,
+                windup: c.windup_secs,
+                speed_mult: c.speed_mult,
+                damage_mult: c.damage_mult,
+            }),
+            stun_secs: 0.0,
+            rage_secs: 0.0,
+            rage_mult: 1.0,
         },
         Health::new(spec.hp),
-        AttackTimer(Timer::from_seconds(ATTACK_INTERVAL, TimerMode::Repeating)),
+        AttackTimer(Timer::from_seconds(spec.attack_interval, TimerMode::Repeating)),
         Mesh3d(meshes.add(Capsule3d::new(r, 2.0 * r))),
         MeshMaterial3d(materials.add(unit_color(faction, spec))),
-        Transform::from_translation(pos + Vec3::Y * 2.0 * r),
+        Transform::from_translation(pos + Vec3::Y * (2.0 * r + lift)),
     ));
     health_bar::spawn(
         &mut e,
         meshes,
         materials,
         2.0 * r,
-        2.0 * r + 0.35,
+        2.0 * r + 0.35 + lift,
         faction_color(faction),
     );
+}
+
+/// 建筑卡实体的碰撞半径（加农炮/墓碑共用小方块）
+pub const BUILDING_RADIUS: f32 = 0.6;
+
+/// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，攻击/出兵由 building_ai 驱动）
+fn spawn_building(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    faction: Faction,
+    card: u8,
+    spec: &BuildingSpec,
+    pos: Vec3,
+) {
+    let r = BUILDING_RADIUS;
+    let mut e = commands.spawn((
+        BuildingCard {
+            faction,
+            card,
+            radius: r,
+            lifetime: spec.lifetime_secs,
+            attack: spec.attack.map(|a| BuildingAttackState {
+                damage: a.damage,
+                range: a.range,
+                interval: a.interval,
+                hits_air: a.hits_air,
+                cooldown: 0.0,
+                target: None,
+            }),
+            spawner: spec.spawner.map(|s| BuildingSpawnerState {
+                interval_secs: s.interval_secs,
+                card_id: s.card_id,
+                cooldown: s.interval_secs,
+            }),
+        },
+        Health::new(spec.hp),
+        Mesh3d(meshes.add(Cuboid::new(2.0 * r, 1.4, 2.0 * r))),
+        MeshMaterial3d(materials.add(faction_color(faction).darker(0.15))),
+        Transform::from_translation(pos + Vec3::Y * 0.7),
+    ));
+    health_bar::spawn(&mut e, meshes, materials, 1.4, 1.9, faction_color(faction));
 }
 
 /// 卡槽 UI：底部 4 张手牌 + 右侧下一张预览（在圣水条上方）
@@ -397,14 +569,19 @@ mod tests {
             enemy: ELIXIR_START,
         });
         app.insert_resource(Decks::shuffled());
+        // 强制手牌 0 为骑士（部队）：牌池可能抽到法术/建筑，测试要确定性
+        app.world_mut().resource_mut::<Decks>().player[0] = 0;
         app.init_resource::<Tick>();
         app.init_resource::<CommandBuffer>();
         app.init_resource::<CommandLog>();
         app.init_resource::<Assets<Mesh>>();
         app.init_resource::<Assets<StandardMaterial>>();
 
-        let card_id = app.world().resource::<Decks>().player[0];
+        let card_id = 0u8;
         let spec = &CARDS[card_id as usize];
+        let CardKind::Troop(ms) = &spec.kind else {
+            unreachable!("卡 0 是骑士")
+        };
         let world = app.world_mut();
         world.resource_mut::<CommandBuffer>().local.insert(
             0,
@@ -444,7 +621,193 @@ mod tests {
         let mut monsters = world.query::<&Monster>();
         let spawned: Vec<&Monster> = monsters.iter(world).collect();
         assert_eq!(spawned.len(), spec.count as usize);
-        assert_eq!(spawned[0].damage, spec.monster.damage);
+        assert_eq!(spawned[0].damage, ms.damage);
+    }
+
+    /// 牌池：21 选 8、同种子双方同池不同序、卡种不重复
+    #[test]
+    fn deck_pool_selects_distinct_shared_cards() {
+        let pool = deck_pool(42);
+        assert_eq!(pool.len(), DECK_SIZE);
+        // 无重复
+        let mut sorted = pool.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), DECK_SIZE);
+        // 双方同池
+        let decks = Decks::shuffled_with(42);
+        let mut p = decks.player.clone();
+        let mut e = decks.enemy.clone();
+        p.sort();
+        e.sort();
+        assert_eq!(p, e, "双方必须共享同一 8 张牌池");
+        // 同种子结果稳定
+        assert_eq!(Decks::shuffled_with(42).player, decks.player);
+        // 不同种子通常不同（固定一对已知不同的种子做回归锚）
+        assert_ne!(Decks::shuffled_with(42).player, Decks::shuffled_with(7).player);
+    }
+
+    /// 法术出牌：瞬发结算伤害+晕眩，塔不吃法术，扣费+牌循环正常
+    #[test]
+    fn spell_card_damages_and_stuns_instantly() {
+        let mut app = App::new();
+        app.insert_resource(Elixir {
+            player: ELIXIR_START,
+            enemy: ELIXIR_START,
+        });
+        app.insert_resource(Decks::shuffled());
+        // 强制手牌 0 为电击（Zap，id 15）：2 费、半径 1.2、伤 160、晕 0.5s
+        app.world_mut().resource_mut::<Decks>().player[0] = 15;
+        app.init_resource::<Tick>();
+        app.init_resource::<CommandBuffer>();
+        app.init_resource::<CommandLog>();
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+
+        let world = app.world_mut();
+        // 敌方怪在法术范围内（距离 1.0 < 1.2）
+        let victim = world
+            .spawn((
+                Monster {
+                    faction: Faction::Enemy,
+                    card: 0,
+                    damage: 100.0,
+                    attack_range: 0.75,
+                    aggro_range: 5.0,
+                    speed: 1.5,
+                    radius: 0.5,
+                    mass: 1.0,
+                    ranged: false,
+                    splash_radius: 0.0,
+                    hits_air: false,
+                    flying: false,
+                    building_only: false,
+                    engaged: false,
+                    target: None,
+                    charge: None,
+                    stun_secs: 0.0,
+                    rage_secs: 0.0,
+                    rage_mult: 1.0,
+                },
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 5.0),
+            ))
+            .id();
+        // 敌方塔在范围内：不吃法术
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 8.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(1.0, 0.0, 5.0),
+            ))
+            .id();
+        // 范围外的己方怪（距离 5 > 1.2）：不掉血
+        let bystander = world
+            .spawn((
+                Monster {
+                    faction: Faction::Player,
+                    card: 0,
+                    damage: 100.0,
+                    attack_range: 0.75,
+                    aggro_range: 5.0,
+                    speed: 1.5,
+                    radius: 0.5,
+                    mass: 1.0,
+                    ranged: false,
+                    splash_radius: 0.0,
+                    hits_air: false,
+                    flying: false,
+                    building_only: false,
+                    engaged: false,
+                    target: None,
+                    charge: None,
+                    stun_secs: 0.0,
+                    rage_secs: 0.0,
+                    rage_mult: 1.0,
+                },
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        world.resource_mut::<CommandBuffer>().local.insert(
+            0,
+            vec![GameCommand::Deploy {
+                faction: Faction::Player,
+                card: 15,
+                x: 0.0,
+                z: 5.0, // 敌半场：法术全场可放
+            }],
+        );
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(crate::combat::apply_commands);
+        schedule.run(world);
+
+        // 扣 2 费 + 牌循环
+        assert_eq!(world.resource::<Elixir>().player, ELIXIR_START - 2.0);
+        assert_eq!(world.resource::<Decks>().player[DECK_SIZE - 1], 15);
+        // 敌怪：掉血 + 被晕
+        assert_eq!(world.get::<Health>(victim).unwrap().current, 2000.0 - 160.0);
+        assert_eq!(world.get::<Monster>(victim).unwrap().stun_secs, 0.5);
+        // 塔：不吃法术
+        assert_eq!(world.get::<Health>(tower).unwrap().current, 6000.0);
+        // 范围外：无伤
+        assert_eq!(
+            world.get::<Health>(bystander).unwrap().current,
+            2000.0
+        );
+        // 法术瞬发：无虚影、无实体
+        let mut deployers = world.query::<&Deploying>();
+        assert_eq!(deployers.iter(world).count(), 0);
+        let mut monsters = world.query::<&Monster>();
+        assert_eq!(monsters.iter(world).count(), 2, "法术不应产生新单位");
+    }
+
+    /// 建筑卡出牌：己方半场生成虚影，落成建筑实体（可被索敌、有寿命）
+    #[test]
+    fn building_card_spawns_building_entity() {
+        let mut app = App::new();
+        app.insert_resource(Elixir {
+            player: ELIXIR_START,
+            enemy: ELIXIR_START,
+        });
+        app.insert_resource(Decks::shuffled());
+        app.world_mut().resource_mut::<Decks>().player[0] = 19; // 加农炮
+        app.init_resource::<Tick>();
+        app.init_resource::<CommandBuffer>();
+        app.init_resource::<CommandLog>();
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+
+        let world = app.world_mut();
+        world.resource_mut::<CommandBuffer>().local.insert(
+            0,
+            vec![GameCommand::Deploy {
+                faction: Faction::Player,
+                card: 19,
+                x: 0.0,
+                z: -5.0, // 己方半场
+            }],
+        );
+        let mut schedule = Schedule::default();
+        schedule.add_systems(crate::combat::apply_commands);
+        schedule.run(world);
+        let mut deployers = world.query::<&Deploying>();
+        assert_eq!(deployers.iter(world).count(), 1);
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(process_deploying);
+        for _ in 0..CARDS[19].deploy_ticks {
+            schedule.run(world);
+        }
+        let mut buildings = world.query::<&BuildingCard>();
+        let n = buildings.iter(world).count();
+        assert_eq!(n, 1, "建筑落地应生成 BuildingCard 实体");
     }
 }
 
@@ -452,19 +815,10 @@ mod tests {
 mod zone_tests {
     use super::*;
 
-    fn princess(faction: Faction, x: f32, z: f32) -> (Faction, bool, Vec3) {
-        (faction, false, Vec3::new(x, 0.0, z))
-    }
-
     /// CR 部署区域规则：推掉哪侧公主塔，开放哪侧敌半场
     #[test]
     fn deploy_zone_expands_after_princess_falls() {
-        // 敌方左塔活着、右塔已掉（快照里没有右塔）
-        let towers = vec![
-            princess(Faction::Enemy, -6.5, 8.5),  // 左公主塔（活）
-            princess(Faction::Enemy, 0.0, 12.5),  // 占位：实际国王塔是 is_king，不影响
-        ];
-        // 把第二座标记为国王塔
+        // 敌方左公主塔活着、右塔已掉（快照里没有右塔）
         let towers: Vec<(Faction, bool, Vec3)> = vec![
             (Faction::Enemy, false, Vec3::new(-6.5, 0.0, 8.5)),
             (Faction::Enemy, true, Vec3::new(0.0, 0.0, 12.5)),
@@ -486,6 +840,25 @@ mod zone_tests {
         assert!(deploy_allowed(Faction::Enemy, Vec3::new(2.0, 0.0, -5.0), &towers));
     }
 
+    /// 按卡类别的区域规则：法术全场、建筑仅己方半场（不含河道）
+    #[test]
+    fn deploy_zone_depends_on_card_kind() {
+        let towers: Vec<(Faction, bool, Vec3)> = vec![
+            (Faction::Enemy, false, Vec3::new(-6.5, 0.0, 8.5)),
+            (Faction::Enemy, true, Vec3::new(0.0, 0.0, 12.5)),
+        ];
+        let zap = &CARDS[15];
+        let cannon = &CARDS[19];
+        // 法术：全场任意（含河道与敌方半场）
+        assert!(deploy_zone_ok(zap, Faction::Player, Vec3::new(2.0, 0.0, 5.0), &towers));
+        assert!(deploy_zone_ok(zap, Faction::Player, Vec3::new(0.0, 0.0, 0.0), &towers));
+        assert!(deploy_zone_ok(zap, Faction::Player, Vec3::new(0.0, 0.0, 13.5), &towers));
+        // 建筑：己方半场可，河道/敌半场不可
+        assert!(deploy_zone_ok(cannon, Faction::Player, Vec3::new(0.0, 0.0, -5.0), &towers));
+        assert!(!deploy_zone_ok(cannon, Faction::Player, Vec3::new(0.0, 0.0, -1.0), &towers));
+        assert!(!deploy_zone_ok(cannon, Faction::Player, Vec3::new(0.0, 0.0, 5.0), &towers));
+    }
+
     /// 端到端：区域外部署指令被 play_card 丢弃（不出兵、不扣费）
     #[test]
     fn play_card_rejects_out_of_zone_deploy() {
@@ -495,6 +868,8 @@ mod zone_tests {
             enemy: ELIXIR_START,
         });
         app.insert_resource(Decks::shuffled());
+        // 强制手牌 0 为骑士（部队）：法术全场可放，会绕过区域拒绝
+        app.world_mut().resource_mut::<Decks>().player[0] = 0;
         app.init_resource::<Tick>();
         app.init_resource::<CommandBuffer>();
         app.init_resource::<CommandLog>();
@@ -513,7 +888,7 @@ mod zone_tests {
             Transform::from_xyz(-6.5, 0.0, 8.5),
         ));
 
-        let card_id = app.world().resource::<Decks>().player[0];
+        let card_id = 0u8;
         app.world_mut().resource_mut::<CommandBuffer>().local.insert(
             0,
             vec![GameCommand::Deploy {

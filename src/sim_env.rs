@@ -41,40 +41,43 @@ pub const NOOP_ACTION: usize = N_ACTIONS - 1;
 pub const KNIGHT_CARD: u8 = 0;
 pub const MUSKETEER_CARD: u8 = 2;
 pub const GIANT_CARD: u8 = 3;
-// ===== 观测网格（v3：置换不变的网格化观测） =====
+// ===== 观测网格（v4：21 卡种全量 one-hot 网格化观测） =====
 /// 网格列数（与部署格一致）
 pub const GRID_COLS: usize = N_COLS;
 /// 网格行数：己方半场 14 行 + 敌方半场 14 行
 pub const GRID_ROWS: usize = 2 * N_ROWS;
-/// 每格通道数
-pub const GRID_CHANNELS: usize = 12;
-/// 全局段维度
-pub const GLOBAL_SIZE: usize = 30;
-/// 观测向量长度 = 网格 8×28×12 + 全局 30 = 2718
+/// 每格通道数：己方 21 卡种 + 敌方 21 卡种 + 塔 4 通道
+pub const GRID_CHANNELS: usize = 2 * CARDS.len() + 4;
+/// 全局段维度：圣水 4 + 手牌 5 张×21 one-hot 105 + 阶段 3 + 计时 1 + 单位数 2
+pub const GLOBAL_SIZE: usize = 4 + (HAND_SIZE + 1) * CARDS.len() + 3 + 1 + 2;
+/// 观测向量长度 = 网格 8×28×46 + 全局 115 = 10419
 ///
 /// 网格（行动视角，flip 时全场 180° 旋转）：行 0 贴河（己方），行 13 己方底线，
 /// 行 14 敌方贴河，行 27 敌方底线；己方 14 行与部署动作格一一对应
 /// （动作 = 卡槽 × 观测网格己方半场的格子）。
-/// 通道：[己方卡种0..3 计数, 敌方卡种0..3 计数, 己方塔血, 敌方塔血, 己方王塔, 敌方王塔]
+/// 通道：[己方卡种 0..21 计数, 敌方卡种 0..21 计数, 己方塔血, 敌方塔血,
+///        己方王塔, 敌方王塔]——建筑卡按其卡种通道计数（可被"看见"）
 ///
-/// 全局：圣水(存量×2/回复进度/倍率) 4 + 手牌 4 张+下一张卡种 one-hot 20
+/// 全局：圣水(存量×2/回复进度/倍率) 4 + 手牌 4 张+下一张卡种 one-hot 21
 ///       + 阶段 one-hot 3 + 计时 1 + 双方单位总数 2
 ///
 /// 设计动机：v2 的 20 个单位槽位按 ECS 遍历序排列——同一局面输入不同，
 /// MLP 学不稳；网格按位置数数，天然置换不变且空间局部。
+/// v3 → v4：4 卡扩到 21 卡，卡种通道与 one-hot 相应扩宽（旧模型全部作废，
+/// 维度守卫会拒载旧权重）。
 pub const OBS_SIZE: usize = GRID_COLS * GRID_ROWS * GRID_CHANNELS + GLOBAL_SIZE;
 /// 单位总数归一化上限
 const UNIT_COUNT_NORM: usize = 30;
-/// 每格每卡种计数归一化上限（骷髅军团一张 3 只）
-const CELL_COUNT_NORM: f32 = 3.0;
+/// 每格每卡种计数归一化上限（野蛮人一张 4 只）
+const CELL_COUNT_NORM: f32 = 4.0;
 
 /// 通道索引
 const CH_OWN_CARD: usize = 0;
-const CH_ENEMY_CARD: usize = 4;
-const CH_OWN_TOWER: usize = 8;
-const CH_ENEMY_TOWER: usize = 9;
-const CH_OWN_KING: usize = 10;
-const CH_ENEMY_KING: usize = 11;
+const CH_ENEMY_CARD: usize = CARDS.len();
+const CH_OWN_TOWER: usize = 2 * CARDS.len();
+const CH_ENEMY_TOWER: usize = 2 * CARDS.len() + 1;
+const CH_OWN_KING: usize = 2 * CARDS.len() + 2;
+const CH_ENEMY_KING: usize = 2 * CARDS.len() + 3;
 
 /// 世界坐标 → 观测网格行列。先按蓝方视角定桶，flip=true 时在索引层做
 /// 镜像（河面反射 + 列反转）。必须索引层镜像而不能"视角坐标取负再定桶"：
@@ -198,15 +201,16 @@ pub fn action_mask(world: &mut World, faction: Faction) -> Vec<bool> {
 /// 定长观测向量：flip=false 蓝方视角，flip=true 红方镜像视角
 ///
 /// 布局：
-/// [0, 30)    全局段
-///   0-3   圣水：己方存量、对方存量、己方距下一点进度、回复倍率(/3)
-///   4-23  手牌 4 张 + 下一张，各占卡种 one-hot(4)
-///   24-27 对局阶段 one-hot(3) + 剩余时间
-///   28-29 双方场上单位总数(/30)
-/// [30, OBS_SIZE) 网格段：8 列 × 28 行 × 12 通道（行 0 贴河，己方 14 行
+/// [0, 115)   全局段
+///   0-3     圣水：己方存量、对方存量、己方距下一点进度、回复倍率(/3)
+///   4-108   手牌 4 张 + 下一张，各占卡种 one-hot(21)
+///   109-111 对局阶段 one-hot(3)
+///   112     剩余时间
+///   113-114 双方场上单位总数(/30，含建筑卡)
+/// [115, OBS_SIZE) 网格段：8 列 × 28 行 × 46 通道（行 0 贴河，己方 14 行
 ///   与部署动作格一一对应；flip 时全场 180° 旋转）
-///   通道：己方卡种 0..3 计数、敌方卡种 0..3 计数、己方塔血、敌方塔血、
-///         己方王塔标记、敌方王塔标记（计数归一化 /3）
+///   通道：己方卡种 0..21 计数、敌方卡种 0..21 计数、己方塔血、敌方塔血、
+///         己方王塔标记、敌方王塔标记（计数归一化 /4；建筑卡按卡种入格）
 pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     let mut v = vec![0.0f32; OBS_SIZE];
 
@@ -232,16 +236,16 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
 
     let decks = world.resource::<Decks>();
     let queue = decks.queue(own_faction);
-    // 手牌 4 张 + 下一张（各 4 维 one-hot）
+    // 手牌 4 张 + 下一张（各 21 维 one-hot）
     for (i, c) in queue.iter().take(HAND_SIZE + 1).enumerate() {
         let base = 4 + i * CARDS.len();
         v[base + (*c as usize).min(CARDS.len() - 1)] = 1.0;
     }
 
-    v[24] = (timer.phase == MatchPhase::Regular) as u8 as f32;
-    v[25] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
-    v[26] = (timer.phase == MatchPhase::Drain) as u8 as f32;
-    v[27] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
+    v[109] = (timer.phase == MatchPhase::Regular) as u8 as f32;
+    v[110] = (timer.phase == MatchPhase::Overtime) as u8 as f32;
+    v[111] = (timer.phase == MatchPhase::Drain) as u8 as f32;
+    v[112] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
 
     // ===== 网格段：塔 =====
     // 塔血按位置入格（王塔另有标记通道）；flip 时坐标取反
@@ -259,7 +263,7 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
         }
     }
 
-    // ===== 网格段：单位（按格计数，置换不变） =====
+    // ===== 网格段：单位（按格计数，置换不变；建筑卡按卡种入格） =====
     let mut total_counts = [0usize; 2];
     {
         let mut q = world.query::<(&Monster, &Transform)>();
@@ -272,15 +276,27 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
             total_counts[own as usize] += 1;
         }
     }
-    // 计数归一化：每格每卡种最多计 3
+    {
+        let mut q = world.query::<(&BuildingCard, &Transform)>();
+        for (b, tr) in q.iter(world) {
+            let (row, col) = grid_cell(tr.translation.x, tr.translation.z, flip);
+            let own = b.faction == own_faction;
+            let ch = if own { CH_OWN_CARD } else { CH_ENEMY_CARD }
+                + (b.card as usize).min(CARDS.len() - 1);
+            v[grid_idx(row, col, ch)] += 1.0;
+            total_counts[own as usize] += 1;
+        }
+    }
+    // 计数归一化：每格每卡种最多计 4（野蛮人一张 4 只）
+    let count_channels = 2 * CARDS.len();
     for cell in 0..GRID_COLS * GRID_ROWS {
-        for ch in 0..8 {
+        for ch in 0..count_channels {
             let i = GLOBAL_SIZE + cell * GRID_CHANNELS + ch;
             v[i] = (v[i] / CELL_COUNT_NORM).min(1.0);
         }
     }
-    v[28] = (total_counts[0] as f32 / UNIT_COUNT_NORM as f32).min(1.0);
-    v[29] = (total_counts[1] as f32 / UNIT_COUNT_NORM as f32).min(1.0);
+    v[113] = (total_counts[0] as f32 / UNIT_COUNT_NORM as f32).min(1.0);
+    v[114] = (total_counts[1] as f32 / UNIT_COUNT_NORM as f32).min(1.0);
     v
 }
 
@@ -355,6 +371,35 @@ pub fn scripted_action(world: &mut World, faction: Faction) -> usize {
             return slot * N_CELLS + cell;
         }
     }
+    // 兜底：牌池 21 选 8 常抽不到三张优先卡 → 圣水 ≥9 时出手中任意部队顶前线
+    // （防"没抽到组合拳就全程挂机白给"；纯法术手牌则继续囤水）
+    if elixir >= 9.0 {
+        let sign = faction_sign(faction);
+        for slot in 0..HAND_SIZE {
+            let Some(card) = hand_card(world, faction, slot) else {
+                continue;
+            };
+            if !matches!(&CARDS[card as usize].kind, CardKind::Troop(_)) {
+                continue;
+            }
+            let mut best_cell = None;
+            let mut best_d = f32::MAX;
+            for cell in 0..N_CELLS {
+                let (x, cz) = cell_to_pos(faction, cell);
+                if !cards::deploy_allowed(faction, Vec3::new(x, 0.0, cz), &towers) {
+                    continue;
+                }
+                let d = (x - lane_x) * (x - lane_x) + (cz - sign * 2.0) * (cz - sign * 2.0);
+                if d < best_d {
+                    best_d = d;
+                    best_cell = Some(cell);
+                }
+            }
+            if let Some(cell) = best_cell {
+                return slot * N_CELLS + cell;
+            }
+        }
+    }
     NOOP_ACTION
 }
 
@@ -409,6 +454,7 @@ impl SimWorld {
                     combat::collect_inputs,
                     combat::apply_commands,
                     cards::process_deploying,
+                    combat::building_ai,
                     combat::monster_ai,
                     combat::tower_ai,
                     combat::move_projectiles,
@@ -769,7 +815,7 @@ mod tests {
         assert_eq!(obs.len(), OBS_SIZE);
         // 手牌 4 张 + 下一张：5 组 one-hot，各恰好一个 1
         for i in 0..5 {
-            let block = &obs[4 + i * 4..4 + (i + 1) * 4];
+            let block = &obs[4 + i * CARDS.len()..4 + (i + 1) * CARDS.len()];
             assert_eq!(block.iter().sum::<f32>(), 1.0, "第 {} 组卡种应为 one-hot", i);
             assert!(block.iter().all(|&x| x == 0.0 || x == 1.0));
         }
@@ -783,12 +829,12 @@ mod tests {
         assert_eq!(tower_sum(&obs, CH_ENEMY_TOWER), 3.0);
         assert_eq!(tower_sum(&obs, CH_OWN_KING), 1.0);
         assert_eq!(tower_sum(&obs, CH_ENEMY_KING), 1.0);
-        // 场上无单位
-        for ch in 0..8 {
+        // 场上无单位：全部卡种通道为 0
+        for ch in 0..2 * CARDS.len() {
             assert_eq!(tower_sum(&obs, ch), 0.0);
         }
-        assert_eq!(obs[28], 0.0);
-        assert_eq!(obs[29], 0.0);
+        assert_eq!(obs[113], 0.0);
+        assert_eq!(obs[114], 0.0);
         // 圣水初值 5/10
         assert_eq!(obs[0], ELIXIR_START / ELIXIR_MAX);
 

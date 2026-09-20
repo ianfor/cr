@@ -55,33 +55,15 @@ pub fn gather_input(
     point.z = point.z.clamp(-14.0, 14.0);
 
     let faction = match net.as_ref() {
-        // 联网：阵营由服务器序号决定；部署区域按 CR 规则校验
-        // （自己半场任意；推掉敌侧公主塔后可在该侧敌半场下怪）
+        // 联网：阵营由服务器序号决定
         Some(n) => {
             let Some(f) = Faction::from_index(n.my_index) else {
                 return; // 还没分配到序号（观战/等待中）
             };
-            let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
-                .iter()
-                .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
-                .collect();
-            if !cards::deploy_allowed(f, point, &tower_snaps) {
-                return; // 区域不可部署：无效操作
-            }
             f
         }
-        // PvE（有机器人）：玩家固定蓝方，部署区域同样按规则校验
-        None if bot_mode.is_some() => {
-            let f = Faction::Player;
-            let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
-                .iter()
-                .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
-                .collect();
-            if !cards::deploy_allowed(f, point, &tower_snaps) {
-                return;
-            }
-            f
-        }
+        // PvE（有机器人）：玩家固定蓝方
+        None if bot_mode.is_some() => Faction::Player,
         // 单机：点哪个半场就属于哪方
         None => {
             if point.z < 0.0 {
@@ -93,6 +75,17 @@ pub fn gather_input(
     };
     // 当前手牌槽位 → 卡牌 id（牌序两端一致，本地读取即可）
     let card = decks.queue(faction)[selected.0.min(HAND_SIZE - 1)];
+    // 部署区域按卡类别校验（法术全场/建筑己半场/部队 CR 推塔扩张规则）。
+    // 单机模式不校验（点哪边半场就归哪方）
+    if net.is_some() || bot_mode.is_some() {
+        let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
+            .iter()
+            .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+            .collect();
+        if !cards::deploy_zone_ok(&CARDS[card as usize], faction, point, &tower_snaps) {
+            return; // 区域不可部署：无效操作
+        }
+    }
     pending.0.push(GameCommand::Deploy {
         faction,
         card,
@@ -136,6 +129,12 @@ pub fn apply_commands(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
+    mut spell_targets: Query<(
+        &mut Health,
+        &Transform,
+        Option<&mut Monster>,
+        Option<&BuildingCard>,
+    )>,
 ) {
     // 部署区域判定用的塔快照（faction, is_king, pos）
     let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
@@ -165,6 +164,7 @@ pub fn apply_commands(
                 &mut elixir,
                 &mut meshes,
                 &mut materials,
+                &mut spell_targets,
                 faction,
                 card,
                 Vec3::new(x, 0.0, z),
@@ -186,6 +186,16 @@ struct UnitSnap {
     pos: Vec3,
     radius: f32,
     is_tower: bool,
+    /// 建筑卡（与塔同属"建筑"类目标，只攻建筑单位的索敌目标）
+    is_building: bool,
+    flying: bool,
+}
+
+impl UnitSnap {
+    /// 是否建筑类目标（塔或建筑卡）
+    fn is_building_kind(&self) -> bool {
+        self.is_tower || self.is_building
+    }
 }
 
 /// 水平边缘距离（忽略 y，减去双方半径）
@@ -195,39 +205,40 @@ fn edge_dist(a_pos: Vec3, a_r: f32, b_pos: Vec3, b_r: f32) -> f32 {
     d.length() - a_r - b_r
 }
 
-/// aggro 范围内最近的敌方怪物
-fn nearest_enemy_monster<'a>(
-    snaps: &'a [UnitSnap],
-    pos: Vec3,
-    monster: &Monster,
-    self_entity: Entity,
-) -> Option<&'a UnitSnap> {
-    snaps
-        .iter()
-        .filter(|s| !s.is_tower && s.faction != monster.faction && s.entity != self_entity)
-        .filter(|s| edge_dist(pos, monster.radius, s.pos, s.radius) <= monster.aggro_range)
-        .min_by(|a, b| {
-            pos.distance_squared(a.pos)
-                .partial_cmp(&pos.distance_squared(b.pos))
-                .unwrap()
-        })
+/// 攻击者能否把该快照当作目标：
+/// - 不能对空 → 打不了飞行单位
+/// - 只攻建筑 → 只索塔/建筑卡，无视怪物（巨人/野猪）
+fn can_target(attacker: &Monster, s: &UnitSnap) -> bool {
+    if s.flying && !attacker.hits_air {
+        return false;
+    }
+    if attacker.building_only {
+        return s.is_building_kind();
+    }
+    true
 }
 
 /// 怪物 AI（属性来自卡牌规格）：
-/// - 目标锁定：一旦锁定不切换，直到目标消失（死亡）才重新索敌
-/// - 索敌范围内有敌方怪物 → 打最近的怪；否则 → 打最近的敌塔
-/// - 进入攻击范围 → 停下攻击：近战直接扣血，远程发射子弹
-/// - 未进入 → 朝目标移动（过河走桥）
+/// - 索敌：aggro 范围内"最近目标"（塔/怪物/建筑一视同仁，修复塔沦为兜底的旧 bug）；
+///   aggro 内没有目标 → 全场最近的敌方建筑（塔/建筑卡）作为行军方向
+/// - 目标锁定：一旦锁定不切换。目标消失（死亡）解锁；
+///   已交战（进过攻击范围）后被挤出攻击范围 = 被打断解锁；
+///   未交战（走向远目标途中）不因距离解锁，也不被新进 aggro 的怪抢走目标
+/// - 进入攻击范围 → 停下攻击：近战直接扣血（可溅射），远程发射子弹
+/// - 冲锋（王子）：持续移动蓄力，蓄满移速×，首击伤害×，命中或被晕清零
+/// - 晕眩：无法移动/攻击；狂暴：攻速/移速×rage_mult
+/// - 未进入 → 朝目标移动（过河走桥；飞行单位直线）
 pub fn monster_ai(
     mut commands: Commands,
     mut monsters: Query<(Entity, &mut Monster, &mut Transform, &mut AttackTimer), Without<Tower>>,
     towers: Query<(Entity, &Tower, &Transform), Without<Monster>>,
+    buildings: Query<(Entity, &BuildingCard, &Transform), (Without<Monster>, Without<Tower>)>,
     mut healths: Query<&mut Health>,
     mut proj_assets: ResMut<ProjectileAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // 快照所有单位
+    // 快照所有单位（怪物 + 塔 + 建筑卡）
     let mut snaps: Vec<UnitSnap> = monsters
         .iter()
         .map(|(e, m, t, _)| UnitSnap {
@@ -236,6 +247,8 @@ pub fn monster_ai(
             pos: t.translation,
             radius: m.radius,
             is_tower: false,
+            is_building: false,
+            flying: m.flying,
         })
         .collect();
     snaps.extend(towers.iter().map(|(e, t, tr)| UnitSnap {
@@ -244,14 +257,42 @@ pub fn monster_ai(
         pos: tr.translation,
         radius: t.radius,
         is_tower: true,
+        is_building: false,
+        flying: false,
+    }));
+    snaps.extend(buildings.iter().map(|(e, b, tr)| UnitSnap {
+        entity: e,
+        faction: b.faction,
+        pos: tr.translation,
+        radius: b.radius,
+        is_tower: false,
+        is_building: true,
+        flying: false,
     }));
 
     for (entity, mut monster, mut transform, mut timer) in monsters.iter_mut() {
         let pos = transform.translation;
 
-        // 锁定失效即解除：目标消失（死亡），或已脱离攻击范围（被打断——
-        // 比如站桩输出时被新放置的怪挤开）。解除后下方立刻重新索敌，
-        // 仍在 aggro 内最近的目标会被重新锁定（可能就是挤它的那只）。
+        // 晕眩：无法移动/攻击，冲锋清零；目标锁定保留（晕完继续打）
+        if monster.stun_secs > 0.0 {
+            monster.stun_secs -= TICK_DT;
+            if let Some(c) = &mut monster.charge {
+                c.progress = 0.0;
+            }
+            continue;
+        }
+        // 狂暴计时衰减
+        if monster.rage_secs > 0.0 {
+            monster.rage_secs -= TICK_DT;
+        }
+
+        // 锁定失效即解除：
+        // 1) 目标消失（死亡）
+        // 2) 已交战（进过攻击范围）后被挤出攻击范围 = 被打断（比如站桩输出时
+        //    被新放置的怪挤开）。解除后下方立刻重新索敌，aggro 内最近的目标
+        //    会被重新锁定（可能就是挤它的那只）。
+        //    未交战的单位（走向远目标途中）不因距离解锁——否则任何进入
+        //    aggro 的怪都会抢走目标（历史 bug：塔的优先级被压到怪物之下）
         if let Some(e) = monster.target {
             let invalid = match snaps
                 .iter()
@@ -259,27 +300,37 @@ pub fn monster_ai(
             {
                 None => true, // 目标已消失
                 Some(s) => {
-                    edge_dist(pos, monster.radius, s.pos, s.radius)
-                        > monster.attack_range + 0.05
+                    monster.engaged
+                        && edge_dist(pos, monster.radius, s.pos, s.radius)
+                            > monster.attack_range + 0.05
                 }
             };
             if invalid {
                 monster.target = None;
+                monster.engaged = false;
             }
         }
-        // 无锁定 → 索敌：aggro 内最近的敌方怪物；没有怪可打 → 最近的敌塔
+        // 无锁定 → 索敌：
+        // a) aggro 内最近的合法目标（塔/怪物/建筑一视同仁）
+        // b) 都没有 → 全场最近的敌方建筑（行军方向；只攻建筑单位同样适用）
         if monster.target.is_none() {
-            monster.target = nearest_enemy_monster(&snaps, pos, &monster, entity)
-                .or_else(|| {
-                    snaps
-                        .iter()
-                        .filter(|s| s.is_tower && s.faction != monster.faction)
-                        .min_by(|a, b| {
-                            pos.distance_squared(a.pos)
-                                .partial_cmp(&pos.distance_squared(b.pos))
-                                .unwrap()
-                        })
-                })
+            let nearest = |filter: &dyn Fn(&UnitSnap) -> bool| {
+                snaps
+                    .iter()
+                    .filter(|s| s.faction != monster.faction && s.entity != entity)
+                    .filter(|s| filter(s))
+                    .min_by(|a, b| {
+                        pos.distance_squared(a.pos)
+                            .partial_cmp(&pos.distance_squared(b.pos))
+                            .unwrap()
+                    })
+            };
+            let in_aggro = nearest(&|s| {
+                can_target(&monster, s)
+                    && edge_dist(pos, monster.radius, s.pos, s.radius) <= monster.aggro_range
+            });
+            monster.target = in_aggro
+                .or_else(|| nearest(&|s| can_target(&monster, s) && s.is_building_kind()))
                 .map(|t| t.entity);
         }
         let Some(target_entity) = monster.target else {
@@ -295,16 +346,31 @@ pub fn monster_ai(
         let edge = edge_dist(pos, monster.radius, target.pos, target.radius);
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
         let stop_dist = monster.attack_range + monster.radius + target.radius;
-        let goal = steering_goal(pos, target.pos);
+        let goal = steering_goal(pos, target.pos, monster.flying);
         let mut to_goal = goal - pos;
         to_goal.y = 0.0;
         let dist = to_goal.length();
 
         if edge <= monster.attack_range + 0.05 {
             // 在攻击范围内：停下攻击（固定步长 tick，保证确定性）
-            if timer.0.tick(TICK_DURATION).just_finished() {
+            monster.engaged = true;
+            // 狂暴加速攻击节奏：计时器步长 ×rage_mult
+            let tick = if monster.rage_secs > 0.0 {
+                std::time::Duration::from_secs_f32(TICK_DT / monster.rage_mult)
+            } else {
+                TICK_DURATION
+            };
+            if timer.0.tick(tick).just_finished() {
+                // 冲锋首击：伤害×蓄力倍率，命中后蓄力清零
+                let mut damage = monster.damage;
+                if let Some(c) = &mut monster.charge {
+                    if c.charged() {
+                        damage *= c.damage_mult;
+                        c.progress = 0.0;
+                    }
+                }
                 if monster.ranged {
-                    // 远程：发射追踪子弹
+                    // 远程：发射追踪子弹（溅射参数随弹携带）
                     let (mesh, mat) = projectile_assets(
                         &mut proj_assets,
                         &mut meshes,
@@ -314,7 +380,10 @@ pub fn monster_ai(
                     commands.spawn((
                         Projectile {
                             target: target.entity,
-                            damage: monster.damage,
+                            damage,
+                            splash_radius: monster.splash_radius,
+                            hits_air: monster.hits_air,
+                            attacker: monster.faction,
                         },
                         Mesh3d(mesh),
                         MeshMaterial3d(mat),
@@ -323,11 +392,40 @@ pub fn monster_ai(
                     ));
                 } else if let Ok(mut health) = healths.get_mut(target.entity) {
                     // 近战：直接扣血
-                    health.current -= monster.damage;
+                    health.current -= damage;
+                }
+                // 近战溅射：以自身为中心的范围伤害（瓦基丽 360°）
+                if !monster.ranged && monster.splash_radius > 0.0 {
+                    for s in snaps
+                        .iter()
+                        .filter(|s| s.faction != monster.faction && s.entity != target.entity)
+                    {
+                        if s.flying && !monster.hits_air {
+                            continue; // 对地溅射打不到空军
+                        }
+                        let mut d = s.pos - pos;
+                        d.y = 0.0;
+                        if d.length() <= monster.splash_radius + s.radius {
+                            if let Ok(mut health) = healths.get_mut(s.entity) {
+                                health.current -= damage;
+                            }
+                        }
+                    }
                 }
             }
         } else if dist > 1e-4 {
-            let step = monster.speed * TICK_DT;
+            // 冲锋蓄力：持续移动累积，蓄满进入冲锋（移速×）
+            let mut speed = monster.speed;
+            if let Some(c) = &mut monster.charge {
+                c.progress += TICK_DT;
+                if c.charged() {
+                    speed *= c.speed_mult;
+                }
+            }
+            if monster.rage_secs > 0.0 {
+                speed *= monster.rage_mult;
+            }
+            let step = speed * TICK_DT;
             // 朝最终目标移动时不要把步长走过停止距离
             let step = if goal == target.pos {
                 step.min((dist - stop_dist).max(0.0))
@@ -423,6 +521,9 @@ pub fn tower_ai(
                 Projectile {
                     target: target_entity,
                     damage: TOWER_ATTACK_DAMAGE,
+                    splash_radius: 0.0,
+                    hits_air: true,
+                    attacker: tower.faction,
                 },
                 Mesh3d(mesh),
                 MeshMaterial3d(mat),
@@ -433,24 +534,30 @@ pub fn tower_ai(
     }
 }
 
-/// 子弹追踪目标：命中扣血，目标已死则子弹消失
-/// 目标可以是怪物（塔的子弹）或塔（远程怪的子弹）
+/// 子弹追踪目标：命中扣血（可溅射），目标已死则子弹消失
+/// 目标可以是怪物（塔/建筑/远程怪的子弹）、塔或建筑卡（远程怪的子弹）
 pub fn move_projectiles(
     mut commands: Commands,
     mut projectiles: Query<(Entity, &Projectile, &mut Transform), Without<Monster>>,
-    monsters: Query<(&Transform, &Monster), Without<Projectile>>,
+    monsters: Query<(Entity, &Transform, &Monster), Without<Projectile>>,
     towers: Query<(&Transform, &Tower), (Without<Monster>, Without<Projectile>)>,
+    buildings: Query<(Entity, &BuildingCard, &Transform), (Without<Monster>, Without<Projectile>)>,
     mut healths: Query<&mut Health>,
 ) {
     for (e, proj, mut transform) in &mut projectiles {
-        // 查目标位置和半径：先怪物后塔
+        // 查目标位置和半径：先怪物，后塔/建筑卡
         let target = monsters
             .get(proj.target)
-            .map(|(t, m)| (t.translation, m.radius))
+            .map(|(_, t, m)| (t.translation, m.radius))
             .or_else(|_| {
                 towers
                     .get(proj.target)
                     .map(|(t, tw)| (t.translation, tw.radius))
+            })
+            .or_else(|_| {
+                buildings
+                    .get(proj.target)
+                    .map(|(_, b, t)| (t.translation, b.radius))
             });
         let Ok((target_pos, target_radius)) = target else {
             commands.entity(e).despawn();
@@ -463,9 +570,135 @@ pub fn move_projectiles(
             if let Ok(mut health) = healths.get_mut(proj.target) {
                 health.current -= proj.damage;
             }
+            // 溅射：以命中点为中心的范围伤害（对攻击方阵营的敌人）
+            if proj.splash_radius > 0.0 {
+                for (me, mt, m) in monsters.iter() {
+                    if m.faction == proj.attacker || me == proj.target {
+                        continue;
+                    }
+                    if m.flying && !proj.hits_air {
+                        continue; // 对地溅射打不到空军
+                    }
+                    let mut d = mt.translation - target_pos;
+                    d.y = 0.0;
+                    if d.length() <= proj.splash_radius + m.radius {
+                        if let Ok(mut health) = healths.get_mut(me) {
+                            health.current -= proj.damage;
+                        }
+                    }
+                }
+                for (be, b, bt) in buildings.iter() {
+                    if b.faction == proj.attacker || be == proj.target {
+                        continue;
+                    }
+                    let mut d = bt.translation - target_pos;
+                    d.y = 0.0;
+                    if d.length() <= proj.splash_radius + b.radius {
+                        if let Ok(mut health) = healths.get_mut(be) {
+                            health.current -= proj.damage;
+                        }
+                    }
+                }
+            }
             commands.entity(e).despawn();
         } else {
             transform.translation += to_target.normalize() * step;
+        }
+    }
+}
+
+/// 建筑卡 AI（帧同步链内）：寿命倒计时自毁；加农炮索敌开火；墓碑出兵
+pub fn building_ai(
+    mut commands: Commands,
+    mut buildings: Query<(Entity, &mut BuildingCard, &Transform)>,
+    monsters: Query<(Entity, &Monster, &Transform), Without<BuildingCard>>,
+    mut proj_assets: ResMut<ProjectileAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (e, mut building, transform) in &mut buildings {
+        // 寿命到 → 自毁（不返圣水）
+        building.lifetime -= TICK_DT;
+        if building.lifetime <= 0.0 {
+            commands.entity(e).despawn();
+            continue;
+        }
+        let faction = building.faction;
+        let pos = transform.translation;
+        let radius = building.radius;
+
+        // 攻击（加农炮类）：锁定 aggro = 攻击范围内最近的敌方怪物
+        if let Some(attack) = &mut building.attack {
+            if let Some(t) = attack.target {
+                let valid = monsters
+                    .get(t)
+                    .map(|(_, m, mt)| {
+                        m.faction != faction
+                            && (attack.hits_air || !m.flying)
+                            && edge_dist(pos, radius, mt.translation, m.radius) <= attack.range
+                    })
+                    .unwrap_or(false);
+                if !valid {
+                    attack.target = None;
+                }
+            }
+            if attack.target.is_none() {
+                attack.target = monsters
+                    .iter()
+                    .filter(|(_, m, _)| m.faction != faction)
+                    .filter(|(_, m, _)| attack.hits_air || !m.flying)
+                    .filter(|(_, m, mt)| {
+                        edge_dist(pos, radius, mt.translation, m.radius) <= attack.range
+                    })
+                    .min_by(|a, b| {
+                        pos.distance_squared(a.2.translation)
+                            .partial_cmp(&pos.distance_squared(b.2.translation))
+                            .unwrap()
+                    })
+                    .map(|(me, _, _)| me);
+            }
+            attack.cooldown -= TICK_DT;
+            if let Some(target) = attack.target {
+                if attack.cooldown <= 0.0 {
+                    attack.cooldown = attack.interval;
+                    let (mesh, mat) =
+                        projectile_assets(&mut proj_assets, &mut meshes, &mut materials, faction);
+                    commands.spawn((
+                        Projectile {
+                            target,
+                            damage: attack.damage,
+                            splash_radius: 0.0,
+                            hits_air: attack.hits_air,
+                            attacker: faction,
+                        },
+                        Mesh3d(mesh),
+                        MeshMaterial3d(mat),
+                        Transform::from_translation(pos + Vec3::Y * 1.2),
+                        NotShadowCaster,
+                    ));
+                }
+            }
+        }
+
+        // 出兵（墓碑类）：倒计时出一只对应卡的小兵
+        if let Some(spawner) = &mut building.spawner {
+            spawner.cooldown -= TICK_DT;
+            if spawner.cooldown <= 0.0 {
+                spawner.cooldown = spawner.interval_secs;
+                if let Some(spec) = CARDS.iter().find(|c| c.id == spawner.card_id) {
+                    if let CardKind::Troop(ms) = &spec.kind {
+                        cards::spawn_unit(
+                            &mut commands,
+                            &mut meshes,
+                            &mut materials,
+                            faction,
+                            spawner.card_id,
+                            ms,
+                            Vec3::new(pos.x, 0.0, pos.z),
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -474,10 +707,12 @@ pub fn move_projectiles(
 /// - 两两碰撞时按 dir/distance 累积转向力（越近力越大）
 /// - 力按质量分配：大质量怪物推开小质量怪物（轻的吃更多力）
 /// - 总力钳制 MAX_STEERING_FORCE，以速度形式施加（不再硬改位置，防闪现）
+/// - 飞行单位不参与地面推挤（也不互相推挤）
 pub fn separate_monsters(mut monsters: Query<(&Monster, &mut Transform)>) {
-    // 快照 (pos, radius, mass)
+    // 快照 (pos, radius, mass)：只收地面单位
     let snaps: Vec<(Vec3, f32, f32)> = monsters
         .iter()
+        .filter(|(m, _)| !m.flying)
         .map(|(m, t)| (t.translation, m.radius, m.mass))
         .collect();
     let mut forces: Vec<Vec3> = vec![Vec3::ZERO; snaps.len()];
@@ -499,8 +734,14 @@ pub fn separate_monsters(mut monsters: Query<(&Monster, &mut Transform)>) {
         }
     }
 
-    for (i, (_, mut transform)) in monsters.iter_mut().enumerate() {
-        let mut f = forces[i];
+    // 力的施加顺序与快照一致（iter 顺序稳定，无结构性变更）
+    let mut idx = 0;
+    for (m, mut transform) in monsters.iter_mut() {
+        if m.flying {
+            continue;
+        }
+        let mut f = forces[idx];
+        idx += 1;
         f.y = 0.0;
         let mag = f.length();
         if mag > 1e-4 {
@@ -515,10 +756,13 @@ pub fn separate_monsters(mut monsters: Query<(&Monster, &mut Transform)>) {
     }
 }
 
-/// 河道禁入（硬约束）：不在桥道上的怪物不允许停留在河面，挤下去立刻推回岸边
-/// 转向逻辑管"走"，这个管"挤"
-pub fn keep_out_of_river(mut monsters: Query<&mut Transform, With<Monster>>) {
-    for mut transform in &mut monsters {
+/// 河道禁入（硬约束）：不在桥道上的怪物不允许停留在河面，挤下去立刻推回岸边。
+/// 飞行单位无视河道。转向逻辑管"走"，这个管"挤"
+pub fn keep_out_of_river(mut monsters: Query<(&Monster, &mut Transform)>) {
+    for (m, mut transform) in &mut monsters {
+        if m.flying {
+            continue;
+        }
         let p = &mut transform.translation;
         if p.z.abs() < RIVER_HALF_WIDTH {
             let on_bridge = BRIDGES
@@ -533,15 +777,28 @@ pub fn keep_out_of_river(mut monsters: Query<&mut Transform, With<Monster>>) {
     }
 }
 
-/// 怪物与塔的静态阻挡：不能穿过塔身
+/// 怪物与静态建筑（塔/建筑卡）的阻挡：不能穿过；飞行单位无视
 pub fn separate_from_towers(
     mut monsters: Query<(&Monster, &mut Transform)>,
     towers: Query<(&Tower, &Transform), Without<Monster>>,
+    buildings: Query<(&BuildingCard, &Transform), (Without<Monster>, Without<Tower>)>,
 ) {
     for (m, mut transform) in &mut monsters {
+        if m.flying {
+            continue;
+        }
         for (tower, tower_transform) in &towers {
             let min_dist = tower.radius + m.radius;
             let mut diff = transform.translation - tower_transform.translation;
+            diff.y = 0.0;
+            let dist = diff.length();
+            if dist < min_dist && dist > 1e-4 {
+                transform.translation += diff.normalize() * (min_dist - dist);
+            }
+        }
+        for (building, building_transform) in &buildings {
+            let min_dist = building.radius + m.radius;
+            let mut diff = transform.translation - building_transform.translation;
             diff.y = 0.0;
             let dist = diff.length();
             if dist < min_dist && dist > 1e-4 {
@@ -560,6 +817,7 @@ pub fn check_game_over(
     kings: Query<(&Tower, &Health), With<KingTower>>,
     towers: Query<(Entity, &Tower, &Health)>,
     monsters: Query<(Entity, &Monster)>,
+    buildings: Query<(Entity, &BuildingCard)>,
     net: Option<Res<NetClient>>,
 ) {
     use crate::match_flow::MatchPhase;
@@ -629,6 +887,12 @@ pub fn check_game_over(
                 commands.entity(e).despawn();
             }
         }
+        // 失败方的建筑卡也一并清除（否则靠寿命慢慢自毁，结算画面不干净）
+        for (e, b) in &buildings {
+            if b.faction == loser {
+                commands.entity(e).despawn();
+            }
+        }
     }
 
     // 结算界面（本地表现层，不影响模拟）
@@ -657,10 +921,11 @@ pub fn despawn_dead(
     }
 }
 
-/// 路点转向：需要过河时，先走向最近的桥口，进了桥道再直线过河
-fn steering_goal(pos: Vec3, target: Vec3) -> Vec3 {
-    if pos.z.signum() == target.z.signum() {
-        return target; // 已过河（或本就同侧），直奔目标
+/// 路点转向：需要过河时，先走向最近的桥口，进了桥道再直线过河；
+/// 飞行单位无视河道，直线飞向目标
+fn steering_goal(pos: Vec3, target: Vec3, flying: bool) -> Vec3 {
+    if flying || pos.z.signum() == target.z.signum() {
+        return target; // 飞行直线 / 已过河（或本就同侧），直奔目标
     }
     // 选最近的桥
     let bridge_x = BRIDGES
@@ -680,6 +945,32 @@ fn steering_goal(pos: Vec3, target: Vec3) -> Vec3 {
     } else {
         // 斜走向本方一侧的桥口
         Vec3::new(bridge_x, 0.0, pos.z.signum() * (RIVER_HALF_WIDTH + 0.5))
+    }
+}
+
+/// 测试用白板骑士（所有新机制字段取默认关闭值）
+#[cfg(test)]
+pub(crate) fn test_monster(faction: Faction) -> Monster {
+    Monster {
+        faction,
+        card: 0,
+        damage: 100.0,
+        attack_range: 0.75,
+        aggro_range: 5.0,
+        speed: 1.5,
+        radius: 0.5,
+        mass: 1.0,
+        ranged: false,
+        splash_radius: 0.0,
+        hits_air: false,
+        flying: false,
+        building_only: false,
+        engaged: false,
+        target: None,
+        charge: None,
+        stun_secs: 0.0,
+        rage_secs: 0.0,
+        rage_mult: 1.0,
     }
 }
 
@@ -709,18 +1000,7 @@ mod tests {
 
     fn spawn_monster(world: &mut World, faction: Faction) {
         world.spawn((
-            Monster {
-                faction,
-                card: 0,
-                damage: 100.0,
-                attack_range: 0.75,
-                aggro_range: 5.0,
-                speed: 1.5,
-                radius: 0.5,
-                mass: 1.0,
-                ranged: false,
-                target: None,
-            },
+            test_monster(faction),
             Health::new(100.0),
         ));
     }
@@ -844,17 +1124,10 @@ mod aggro_tests {
             .init_resource::<ProjectileAssets>();
         let world = app.world_mut();
 
-        let mk = |faction: Faction| Monster {
-            faction,
-            card: 0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 3.0,
-            radius: 0.5,
-            mass: 1.0,
-            ranged: false,
-            target: None,
+        let mk = |faction: Faction| {
+            let mut m = test_monster(faction);
+            m.speed = 3.0;
+            m
         };
         let a = world
             .spawn((
@@ -900,23 +1173,14 @@ mod lock_retarget_tests {
     use super::*;
 
     fn mk(faction: Faction) -> Monster {
-        Monster {
-            faction,
-            card: 0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
-            mass: 1.0,
-            ranged: false,
-            target: None,
-        }
+        test_monster(faction)
     }
 
-    /// 锁塔的怪在敌方怪物进入 aggro 后必须改锁怪物（塔只是兜底目标）
+    /// 走向塔途中的怪（未交战）保持目标：不被新进 aggro 的敌怪抢走锁定。
+    /// 这是索敌修复的核心：旧逻辑塔是"兜底目标"，任何进 aggro 的怪都能抢锁，
+    /// 导致单位反复横跳；新逻辑锁定只在目标死亡或交战后被打断时解除
     #[test]
-    fn tower_locked_monster_retargets_to_enemy_monster() {
+    fn walking_monster_keeps_tower_target() {
         let mut app = App::new();
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
@@ -949,18 +1213,21 @@ mod lock_retarget_tests {
         schedule.run(world);
         // 出生时无怪可打 → 锁塔
         assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
+        assert!(!world.get::<Monster>(m).unwrap().engaged);
 
-        // 敌方怪物进入 aggro → 必须改锁怪物
-        let e = world
-            .spawn((
-                mk(Faction::Enemy),
-                Health::new(2000.0),
-                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
-                Transform::from_xyz(0.0, 1.0, -1.0),
-            ))
-            .id();
+        // 敌方怪物进入 aggro：未交战的单位必须保持锁塔（不被抢锁）
+        world.spawn((
+            mk(Faction::Enemy),
+            Health::new(2000.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(0.0, 1.0, -1.0),
+        ));
         schedule.run(world);
-        assert_eq!(world.get::<Monster>(m).unwrap().target, Some(e));
+        assert_eq!(
+            world.get::<Monster>(m).unwrap().target,
+            Some(tower),
+            "未交战单位的锁定不应被新进 aggro 的怪抢走"
+        );
     }
 }
 
@@ -969,18 +1236,7 @@ mod engaged_lock_tests {
     use super::*;
 
     fn mk(faction: Faction) -> Monster {
-        Monster {
-            faction,
-            card: 0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
-            mass: 1.0,
-            ranged: false,
-            target: None,
-        }
+        test_monster(faction)
     }
 
     /// 已在攻击塔的怪（交战状态）绝不改目标，即使敌方怪物进入 aggro
@@ -1036,18 +1292,7 @@ mod interrupt_tests {
     use super::*;
 
     fn mk(faction: Faction) -> Monster {
-        Monster {
-            faction,
-            card: 0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
-            mass: 1.0,
-            ranged: false,
-            target: None,
-        }
+        test_monster(faction)
     }
 
     /// 站桩输出被挤到脱离攻击范围 = 被打断：锁定必须解除并改锁挤它的怪
@@ -1108,16 +1353,8 @@ mod steering_tests {
 
     fn mk_with_mass(faction: Faction, mass: f32) -> Monster {
         Monster {
-            faction,
-            card: 0,
-            damage: 100.0,
-            attack_range: 0.75,
-            aggro_range: 5.0,
-            speed: 1.5,
-            radius: 0.5,
             mass,
-            ranged: false,
-            target: None,
+            ..test_monster(faction)
         }
     }
 
@@ -1160,5 +1397,359 @@ mod steering_tests {
         // 单帧位移不得超过力上限（防闪现）
         assert!(light_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
         assert!(heavy_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod new_mechanics_tests {
+    use super::*;
+
+    /// 只攻建筑单位（巨人/野猪）：无视 aggro 内的敌怪，直奔塔/建筑卡
+    #[test]
+    fn building_only_ignores_monsters() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, 12.5),
+            ))
+            .id();
+        let mut giant = test_monster(Faction::Player);
+        giant.building_only = true;
+        let g = world
+            .spawn((
+                giant,
+                Health::new(5000.0),
+                AttackTimer(Timer::from_seconds(1.5, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+        // 敌方骷髅进 aggro（距离 4，边缘距 3 ≤ 5）
+        world.spawn((
+            test_monster(Faction::Enemy),
+            Health::new(300.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(0.0, 1.0, -1.0),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        schedule.run(world);
+        assert_eq!(
+            world.get::<Monster>(g).unwrap().target,
+            Some(tower),
+            "只攻建筑单位必须无视怪物直奔塔"
+        );
+    }
+
+    /// 不能对空的地面单位：打不了飞行单位，索敌跳过空军
+    #[test]
+    fn ground_unit_cannot_target_flying() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, 12.5),
+            ))
+            .id();
+        let knight = world
+            .spawn((
+                test_monster(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+        // 敌方飞行单位（亡灵）贴脸
+        let mut minion = test_monster(Faction::Enemy);
+        minion.flying = true;
+        world.spawn((
+            minion,
+            Health::new(320.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(0.0, 2.6, -5.4),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        schedule.run(world);
+        assert_eq!(
+            world.get::<Monster>(knight).unwrap().target,
+            Some(tower),
+            "不能对空的单位必须跳过飞行单位"
+        );
+    }
+
+    /// 近战溅射（瓦基丽）：攻击目标时波及身边的第二个敌人
+    #[test]
+    fn melee_splash_hits_nearby_enemy() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let mut valk = test_monster(Faction::Player);
+        valk.splash_radius = 1.5;
+        let a = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.9, 1.0, 0.0), // 贴脸（主目标）
+            ))
+            .id();
+        let b = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, 1.0), // 溅射半径内
+            ))
+            .id();
+        world.spawn((
+            valk,
+            Health::new(2000.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(0.0, 1.0, 0.0),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        for _ in 0..35 {
+            schedule.run(world); // 35 tick > 1.0s 攻击间隔
+        }
+        assert!(world.get::<Health>(a).unwrap().current < 2000.0, "主目标掉血");
+        assert!(
+            world.get::<Health>(b).unwrap().current < 2000.0,
+            "溅射半径内的第二个敌人也必须掉血"
+        );
+    }
+
+    /// 晕眩：完全无法行动（位置不动），晕完恢复移动
+    #[test]
+    fn stun_freezes_monster() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        world.spawn((
+            Tower {
+                faction: Faction::Enemy,
+                radius: 1.0,
+                attack_range: 6.0,
+                target: None,
+            },
+            Health::new(6000.0),
+            Transform::from_xyz(0.0, 0.0, 12.5),
+        ));
+        let mut m = test_monster(Faction::Player);
+        m.stun_secs = 1.0;
+        let e = world
+            .spawn((
+                m,
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        for _ in 0..29 {
+            schedule.run(world); // 29 tick < 1.0s 晕眩
+        }
+        assert_eq!(
+            world.get::<Transform>(e).unwrap().translation,
+            Vec3::new(0.0, 1.0, -5.0),
+            "晕眩期间不得移动"
+        );
+        for _ in 0..10 {
+            schedule.run(world); // 晕眩结束
+        }
+        assert!(
+            world.get::<Transform>(e).unwrap().translation.z > -5.0,
+            "晕眩结束后必须恢复移动（走向塔）"
+        );
+    }
+
+    /// 冲锋（王子）：持续移动蓄力，蓄满后移速倍增
+    #[test]
+    fn charge_accelerates_after_windup() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        world.spawn((
+            Tower {
+                faction: Faction::Enemy,
+                radius: 1.0,
+                attack_range: 6.0,
+                target: None,
+            },
+            Health::new(60000.0),
+            Transform::from_xyz(0.0, 0.0, 12.5),
+        ));
+        let mut prince = test_monster(Faction::Player);
+        prince.charge = Some(ChargeState {
+            progress: 0.0,
+            windup: 0.5,
+            speed_mult: 3.0,
+            damage_mult: 2.0,
+        });
+        let e = world
+            .spawn((
+                prince,
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
+        let start = world.get::<Transform>(e).unwrap().translation;
+        for _ in 0..20 {
+            schedule.run(world);
+        }
+        // 20 tick = 0.667s：前 0.5s 常速 1.5（走 0.75），后 0.167s 冲锋 4.5（走 0.75）
+        // 合计 ~1.4-1.5 > 常速上限 1.0 —— 冲锋必须显著加快（走桥是斜向，量总位移）
+        let moved = world.get::<Transform>(e).unwrap().translation.distance(start);
+        assert!(
+            moved > 1.25,
+            "蓄满冲锋后移速必须倍增：实际移动 {moved:.2}"
+        );
+    }
+
+    /// 建筑 AI：墓碑定时出兵、加农炮索敌开火
+    #[test]
+    fn building_ai_spawns_and_fires() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        // 墓碑：4s 一只骷髅（card 1）
+        world.spawn((
+            BuildingCard {
+                faction: Faction::Player,
+                card: 20,
+                radius: 0.6,
+                lifetime: 100.0,
+                attack: None,
+                spawner: Some(BuildingSpawnerState {
+                    interval_secs: 4.0,
+                    card_id: 1,
+                    cooldown: 4.0,
+                }),
+            },
+            Health::new(800.0),
+            Transform::from_xyz(-4.0, 0.7, -5.0),
+        ));
+        // 加农炮：0.9s 一发，打不到空军
+        world.spawn((
+            BuildingCard {
+                faction: Faction::Enemy,
+                card: 19,
+                radius: 0.6,
+                lifetime: 100.0,
+                attack: Some(BuildingAttackState {
+                    damage: 90.0,
+                    range: 5.0,
+                    interval: 0.9,
+                    hits_air: false,
+                    cooldown: 0.0,
+                    target: None,
+                }),
+                spawner: None,
+            },
+            Health::new(1400.0),
+            Transform::from_xyz(4.0, 0.7, 5.0),
+        ));
+        // 蓝方怪走进红方加农炮射程（距离 < 5）
+        world.spawn((
+            test_monster(Faction::Player),
+            Health::new(2000.0),
+            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+            Transform::from_xyz(4.0, 1.0, 1.0),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(building_ai);
+        for _ in 0..125 {
+            schedule.run(world); // 4.17s
+        }
+        // 墓碑出了 1 只骷髅（4s 时），第 2 只要 8s
+        let mut monsters = world.query::<&Monster>();
+        let skeletons = monsters
+            .iter(world)
+            .filter(|m| m.card == 1)
+            .count();
+        assert_eq!(skeletons, 1, "墓碑 4s 应出 1 只骷髅");
+        // 加农炮已开火：场上存在追踪子弹
+        let mut projectiles = world.query::<&Projectile>();
+        let fired = projectiles
+            .iter(world)
+            .filter(|p| p.attacker == Faction::Enemy)
+            .count();
+        assert!(fired > 0, "加农炮必须对射程内敌人开火");
+    }
+
+    /// 建筑 AI：寿命归零自毁
+    #[test]
+    fn building_expires_after_lifetime() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        world.spawn((
+            BuildingCard {
+                faction: Faction::Player,
+                card: 19,
+                radius: 0.6,
+                lifetime: 1.0,
+                attack: None,
+                spawner: None,
+            },
+            Health::new(1400.0),
+            Transform::from_xyz(0.0, 0.7, -5.0),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(building_ai);
+        for _ in 0..35 {
+            schedule.run(world); // 1.17s > 1.0s 寿命
+        }
+        let mut buildings = world.query::<&BuildingCard>();
+        assert_eq!(buildings.iter(world).count(), 0, "寿命到必须自毁");
     }
 }
