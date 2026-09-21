@@ -212,7 +212,7 @@ pub fn apply_commands(
         Option<&Monster>,
         Option<&BuildingCard>,
         Option<&mut Stun>,
-        Option<&mut Rage>,
+        Option<&mut Buffs>,
     )>,
 ) {
     // 部署区域判定用的塔快照（faction, is_king, pos）

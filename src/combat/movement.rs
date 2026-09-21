@@ -16,11 +16,11 @@ pub fn moving(
         &mut Transform,
         &Attacker,
         Option<&mut Charge>,
-        Option<&Rage>,
+        Option<&Buffs>,
         Option<&Flying>,
     ), Without<Stun>>,
 ) {
-    for (m, mover, mut transform, attacker, mut charge, rage, flying) in &mut movers {
+    for (m, mover, mut transform, attacker, mut charge, buffs, flying) in &mut movers {
         let Some(target_entity) = attacker.target else {
             continue;
         };
@@ -41,16 +41,16 @@ pub fn moving(
         if dist <= 1e-4 {
             continue;
         }
-        // 冲锋蓄力：移动中累积，蓄满移速×
-        let mut speed = mover.speed;
+        // 移速 = 属性修饰器合成（狂暴等数值 buff 都从这里进来）
+        let mut speed = buffs
+            .map(|b| b.stat(mover.speed, StatKind::MoveSpeed))
+            .unwrap_or(mover.speed);
+        // 冲锋蓄力：移动中累积，蓄满移速×（作用在 buff 合成之后）
         if let Some(c) = charge.as_deref_mut() {
             c.progress += TICK_DT;
             if c.charged() {
                 speed *= c.speed_mult;
             }
-        }
-        if let Some(r) = rage {
-            speed *= r.mult;
         }
         let step = speed * TICK_DT;
         // 朝最终目标移动时不要把步长走过停止距离

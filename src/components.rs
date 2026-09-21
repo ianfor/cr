@@ -122,17 +122,110 @@ impl Charge {
 pub struct Flying;
 
 /// 晕眩（法术插入，status_effects 倒计时后移除）：
-/// 无法索敌/攻击/移动，冲锋清零；目标锁定保留
+/// 无法索敌/攻击/移动，冲锋清零；目标锁定保留。
+/// 硬控走独立的排除通道（Without<Stun>），不进属性修饰器管线
 #[derive(Component)]
 pub struct Stun {
     pub secs: f32,
 }
 
-/// 狂暴（法术插入）：攻速/移速 ×mult，持续 secs
-#[derive(Component)]
-pub struct Rage {
+// ===== 属性修饰器管线 =====
+// 数值类 buff 的统一表达：一个 buff = 一组属性修饰 + 持续时间 + 叠加策略。
+// 消费方（attack/movement/...）不逐 buff 查询，而是
+// buffs.stat(基础值, StatKind) 一次性合成最终值。
+// 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
+
+/// 受修饰的属性域（加新属性 = 加一个枚举值 + 消费方一行查询）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StatKind {
+    MoveSpeed,
+    AttackSpeed,
+    // 扩展位：Damage / DamageTaken / Armor / ...
+}
+
+/// 修饰运算（加法先合成，乘法后合成）
+#[derive(Clone, Copy)]
+pub enum Op {
+    /// final = base + value
+    Add,
+    /// final = base × value
+    Mul,
+}
+
+#[derive(Clone, Copy)]
+pub struct StatMod {
+    pub stat: StatKind,
+    pub op: Op,
+    pub value: f32,
+}
+
+/// 同名 buff 再次施加时的处理策略
+#[derive(Clone, Copy)]
+pub enum StackPolicy {
+    /// 刷新持续时间，数值取新的（狂暴）
+    Refresh,
+    /// 独立共存：各倒计时各生效，数值叠乘（不同来源的减速）
+    Independent,
+    /// 最多叠 n 层，每层独立生效（叠层攻速）
+    Stack(u8),
+}
+
+/// 一个活跃 buff 实例（如"狂暴"同时改移速+攻速 = 两条 StatMod）
+pub struct ActiveBuff {
+    /// 同名 = 同种 buff（替换/叠层判定）
+    pub name: &'static str,
+    /// 剩余秒数
     pub secs: f32,
-    pub mult: f32,
+    /// 当前层数（仅 Stack 策略 > 1）
+    pub stacks: u8,
+    pub policy: StackPolicy,
+    pub effects: Vec<StatMod>,
+}
+
+/// buff 容器：每单位一个（懒插入——没 buff 就没组件）
+#[derive(Component, Default)]
+pub struct Buffs(pub Vec<ActiveBuff>);
+
+impl Buffs {
+    /// 施加 buff：按 name 与策略合并（刷新/叠层）或共存（独立）
+    pub fn apply(&mut self, incoming: ActiveBuff) {
+        if let Some(existing) = self.0.iter_mut().find(|b| b.name == incoming.name) {
+            match incoming.policy {
+                StackPolicy::Refresh => {
+                    existing.secs = incoming.secs;
+                    existing.effects = incoming.effects;
+                }
+                StackPolicy::Stack(n) => {
+                    existing.stacks = (existing.stacks + 1).min(n);
+                    existing.secs = incoming.secs;
+                }
+                // 同名独立共存（罕见，但保留语义完整性）
+                StackPolicy::Independent => self.0.push(incoming),
+            }
+        } else {
+            self.0.push(incoming);
+        }
+    }
+
+    /// 属性解析：基础值折叠全部相关修饰，得到最终值
+    pub fn stat(&self, base: f32, kind: StatKind) -> f32 {
+        let mut add = 0.0f32;
+        let mut mul = 1.0f32;
+        for b in &self.0 {
+            for e in b.effects.iter().filter(|e| e.stat == kind) {
+                // Stack 策略按层数放大：加法 ×n，乘法 value^n
+                let n = match b.policy {
+                    StackPolicy::Stack(_) => b.stacks,
+                    _ => 1,
+                };
+                match e.op {
+                    Op::Add => add += e.value * n as f32,
+                    Op::Mul => mul *= e.value.powi(n as i32),
+                }
+            }
+        }
+        (base + add) * mul
+    }
 }
 
 /// 建筑寿命：归零自毁（不返圣水）

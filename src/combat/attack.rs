@@ -23,7 +23,7 @@ pub fn attacking(
         &mut Attacker,
         &Transform,
         Option<&mut Charge>,
-        Option<&Rage>,
+        Option<&Buffs>,
         Option<&Monster>,
         Option<&Tower>,
         Option<&BuildingCard>,
@@ -33,7 +33,7 @@ pub fn attacking(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut attacker, transform, mut charge, rage, monster, tower, building) in &mut units {
+    for (mut attacker, transform, mut charge, buffs, monster, tower, building) in &mut units {
         let Some(target_entity) = attacker.target else {
             continue;
         };
@@ -58,8 +58,11 @@ pub fn attacking(
         }
         attacker.engaged = true;
 
-        // 冷却：狂暴时步长 ÷mult（等价攻速 ×mult）
-        let dt = TICK_DT / rage.map(|r| r.mult).unwrap_or(1.0);
+        // 攻速 = 属性修饰器合成（狂暴等数值 buff 都从这里进来）
+        let rate = buffs
+            .map(|b| b.stat(1.0, StatKind::AttackSpeed))
+            .unwrap_or(1.0);
+        let dt = TICK_DT / rate;
         attacker.cooldown -= dt;
         if attacker.cooldown > 0.0 {
             continue;

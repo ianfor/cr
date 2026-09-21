@@ -171,7 +171,7 @@ pub fn play_card(
         Option<&Monster>,
         Option<&BuildingCard>,
         Option<&mut Stun>,
-        Option<&mut Rage>,
+        Option<&mut Buffs>,
     )>,
     faction: Faction,
     card_id: u8,
@@ -223,9 +223,9 @@ pub fn play_card(
             }
         }
         // 法术：瞬发，直接结算（伤害/晕眩对敌，狂暴对己）
-        // 晕眩/狂暴以 Stun/Rage 组件表达，status_effects 系统管理其生命周期
+        // 晕眩走 Stun 组件（硬控通道），狂暴走 Buffs（属性修饰器管线）
         CardKind::Spell(spell) => {
-            for (e, mut hp, tr, monster, building, mut stun, mut rage) in
+            for (e, mut hp, tr, monster, building, mut stun, mut buffs) in
                 spell_targets.iter_mut()
             {
                 let target_faction = match (&monster, &building) {
@@ -239,18 +239,30 @@ pub fn play_card(
                     continue;
                 }
                 if target_faction == faction {
-                    // 己方单位：狂暴（仅怪物）
+                    // 己方单位：狂暴 buff（仅怪物）
                     if let (Some(r), Some(_)) = (&spell.rage, monster) {
-                        match rage.as_mut() {
-                            Some(existing) => {
-                                existing.secs = r.secs;
-                                existing.mult = r.mult;
-                            }
+                        let buff = ActiveBuff {
+                            name: "Rage",
+                            secs: r.secs,
+                            stacks: 1,
+                            policy: StackPolicy::Refresh,
+                            effects: vec![
+                                StatMod {
+                                    stat: StatKind::MoveSpeed,
+                                    op: Op::Mul,
+                                    value: r.mult,
+                                },
+                                StatMod {
+                                    stat: StatKind::AttackSpeed,
+                                    op: Op::Mul,
+                                    value: r.mult,
+                                },
+                            ],
+                        };
+                        match buffs.as_mut() {
+                            Some(existing) => existing.apply(buff),
                             None => {
-                                commands.entity(e).insert(Rage {
-                                    secs: r.secs,
-                                    mult: r.mult,
-                                });
+                                commands.entity(e).insert(Buffs(vec![buff]));
                             }
                         }
                     }
