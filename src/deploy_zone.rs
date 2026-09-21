@@ -80,7 +80,7 @@ pub fn setup(
         SpellRangeIndicator,
         Mesh3d(ring),
         MeshMaterial3d(ring_mat),
-        Transform::from_xyz(0.0, 0.06, 0.0)
+        Transform::from_xyz(0.0, 0.1, 0.0)
             .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
         Visibility::Hidden,
         NotShadowCaster,
@@ -233,8 +233,11 @@ pub fn spell_range_update(
         return; // 非法术卡：显示的是部署区域，不显示范围圈
     };
     for (mut transform, mut v) in &mut indicator {
-        transform.translation = Vec3::new(point.x, 0.06, point.z);
-        transform.scale = Vec3::new(spell.radius, 1.0, spell.radius);
+        // 圆心 = 放置点（地面射线求交点），略抬避免与部署区覆盖层穿模
+        transform.translation = Vec3::new(point.x, 0.1, point.z);
+        // 环放平后在局部 XY 平面（X 旋转只是躺倒）：X/Y 缩放半径、
+        // Z（管轴）保持 1——按世界轴缩放 (r,1,r) 会画出 Z 向恒为 1 的椭圆
+        transform.scale = Vec3::new(spell.radius, spell.radius, 1.0);
         *v = Visibility::Visible;
     }
 }
