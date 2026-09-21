@@ -259,7 +259,7 @@ pub fn play_card(
                         match buffs.as_mut() {
                             Some(existing) => existing.apply(buff),
                             None => {
-                                commands.entity(e).insert(Buffs(vec![buff]));
+                                commands.entity(e).insert(Buffs::new(buff));
                             }
                         }
                     }
@@ -278,7 +278,7 @@ pub fn play_card(
                         match buffs.as_mut() {
                             Some(existing) => existing.apply(buff),
                             None => {
-                                commands.entity(e).insert(Buffs(vec![buff]));
+                                commands.entity(e).insert(Buffs::new(buff));
                             }
                         }
                     }
@@ -785,8 +785,8 @@ mod tests {
         assert_eq!(world.get::<Health>(victim).unwrap().current, 2000.0 - 160.0);
         let buffs = world.get::<Buffs>(victim).unwrap();
         assert!(buffs.has_cc(CCFlags::STUN), "电击必须附带晕眩标志位");
-        assert_eq!(buffs.0[0].secs, 0.5);
-        assert!(matches!(buffs.0[0].policy, StackPolicy::Longer));
+        assert_eq!(buffs.list[0].secs, 0.5);
+        assert!(matches!(buffs.list[0].policy, StackPolicy::Longer));
         drop(buffs);
         // 塔：不吃法术
         assert_eq!(world.get::<Health>(tower).unwrap().current, 6000.0);

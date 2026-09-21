@@ -121,27 +121,33 @@ impl Charge {
 #[derive(Component)]
 pub struct Flying;
 
-/// 晕眩标记：由 status_effects 从 Buffs 的 STUN 标志位同步派生（快查索引）——
-/// 数据源永远是 Buffs，本组件只让 Without<Stun> 过滤保持 archetype 级速度。
-/// 语义：无法索敌/攻击/移动，冲锋清零，目标锁定保留
-#[derive(Component)]
-pub struct Stun;
+// ===== 控制标志位（打包进 buff 数据） =====
+// 机制种类无限（眩晕/冰冻/缠绕/缴械/沉默/破被动/嘲讽/魔免...），
+// 全部表达为 Buffs 里的标志位；消费方（行为系统/被动系统/伤害结算）
+// 在用时实时折叠查询（channels()/has_cc()），无派生缓存、无同步。
+//
+// 加新机制三步曲：CCFlags 加位 → cc_channels 补映射（或消费方直接查位）
+// → 施加方构造带位的 ActiveBuff。不为机制加任何组件。
 
-// ===== 属性修饰器管线 =====
-// 数值类 buff 的统一表达：一个 buff = 属性修饰 + 控制标志位 + 持续时间 + 叠加策略。
-// 消费方（attack/movement/...）不逐 buff 查询，而是
-// buffs.stat(基础值, StatKind) 一次性合成最终值。
-// 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
-
-/// 控制标志位（晕眩这类"禁用通道"的效果，打包进 buff 数据）
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// 控制标志位
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct CCFlags(pub u8);
 
 impl CCFlags {
     pub const NONE: CCFlags = CCFlags(0);
-    /// 晕眩：禁索敌/攻击/移动，清冲锋
+    /// 晕眩：禁移动+禁攻击+禁索敌，清冲锋
     pub const STUN: CCFlags = CCFlags(1);
-    // 扩展位：ROOT（定身，只禁移动）/ SILENCE（禁法术位）/ TAUNT ...
+    /// 缠绕/定身：禁移动（可攻击）
+    pub const ROOT: CCFlags = CCFlags(1 << 1);
+    /// 缴械：禁攻击（可移动）
+    pub const DISARM: CCFlags = CCFlags(1 << 2);
+    /// 致盲：禁索敌
+    pub const BLIND: CCFlags = CCFlags(1 << 3);
+    /// 沉默：禁施法（技能系统启用后生效）
+    pub const SILENCE: CCFlags = CCFlags(1 << 4);
+    /// 破被动：禁用被动（冲锋蓄力/将来的吸血/闪避等，各被动系统自查此位）
+    pub const BREAK: CCFlags = CCFlags(1 << 5);
+    // 物理免疫/魔法免疫/嘲讽/恐惧：伤害结算过滤与目标改写类，到时加位
 
     pub fn contains(self, other: CCFlags) -> bool {
         self.0 & other.0 == other.0
@@ -149,7 +155,36 @@ impl CCFlags {
     pub fn with(self, other: CCFlags) -> CCFlags {
         CCFlags(self.0 | other.0)
     }
+    /// 并集（多个 buff 的标志合成）
+    pub fn union(flags: impl Iterator<Item = CCFlags>) -> CCFlags {
+        flags.fold(CCFlags::NONE, |acc, f| acc.with(f))
+    }
 }
+
+/// 机制 → 基础通道的映射（行为系统用；被动/伤害过滤类直接查位，不走这里）。
+/// 加新机制 = 加标志位 + 这里补一行映射，消费方零改动
+pub struct Channels {
+    pub cannot_move: bool,
+    pub cannot_attack: bool,
+    pub cannot_seek: bool,
+    pub cannot_cast: bool,
+}
+
+pub fn cc_channels(cc: CCFlags) -> Channels {
+    let stunned = cc.contains(CCFlags::STUN);
+    Channels {
+        cannot_move: stunned || cc.contains(CCFlags::ROOT),
+        cannot_attack: stunned || cc.contains(CCFlags::DISARM),
+        cannot_seek: stunned || cc.contains(CCFlags::BLIND),
+        cannot_cast: stunned || cc.contains(CCFlags::SILENCE),
+    }
+}
+
+// ===== 属性修饰器管线 =====
+// 数值类 buff 的统一表达：一个 buff = 属性修饰 + 控制标志位 + 持续时间 + 叠加策略。
+// 消费方（attack/movement/...）不逐 buff 查询，而是
+// buffs.stat(基础值, StatKind) 一次性合成最终值。
+// 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
 
 /// 受修饰的属性域（加新属性 = 加一个枚举值 + 消费方一行查询）
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -157,6 +192,35 @@ pub enum StatKind {
     MoveSpeed,
     AttackSpeed,
     // 扩展位：Damage / DamageTaken / Armor / ...
+}
+
+impl StatKind {
+    /// 属性域数量（合成缓存数组长度）
+    pub const COUNT: usize = 2;
+
+    fn index(self) -> usize {
+        match self {
+            StatKind::MoveSpeed => 0,
+            StatKind::AttackSpeed => 1,
+        }
+    }
+}
+
+/// 每属性域的合成缓存：(加法和, 乘法积)，附加/过期时重算，
+/// 消费方 stat() 读缓存拼基础值：final = (base + add) × mul
+#[derive(Clone, Copy)]
+struct StatFold {
+    add: [f32; StatKind::COUNT],
+    mul: [f32; StatKind::COUNT],
+}
+
+impl Default for StatFold {
+    fn default() -> Self {
+        StatFold {
+            add: [0.0; StatKind::COUNT],
+            mul: [1.0; StatKind::COUNT],
+        }
+    }
 }
 
 /// 修饰运算（加法先合成，乘法后合成）
@@ -203,14 +267,53 @@ pub struct ActiveBuff {
     pub effects: Vec<StatMod>,
 }
 
-/// buff 容器：每单位一个（懒插入——没 buff 就没组件）
+/// buff 容器：每单位一个（懒插入——没 buff 就没组件）。
+/// 唯一数据源，两类派生值都在变更点（apply/tick/构造）重算一次：
+/// - cc：控制标志位并集（channels()/has_cc() 读缓存）
+/// - stats：每属性域的 (ΣAdd, ΠMul)（stat() 读缓存拼基础值）
+/// 修改 list 必须走 apply()/tick()，否则缓存会过期
 #[derive(Component, Default)]
-pub struct Buffs(pub Vec<ActiveBuff>);
+pub struct Buffs {
+    pub list: Vec<ActiveBuff>,
+    /// 标志位并集缓存
+    cc: CCFlags,
+    /// 属性合成缓存
+    stats: StatFold,
+}
 
 impl Buffs {
+    /// 单条 buff 起手构造（play_card / 测试用；等价 apply 后的容器）
+    pub fn new(buff: ActiveBuff) -> Self {
+        let mut b = Buffs::default();
+        b.list.push(buff);
+        b.recompute();
+        b
+    }
+
+    /// 重算全部派生缓存（仅变更点调用：apply / 过期 / 构造）
+    fn recompute(&mut self) {
+        self.cc = CCFlags::union(self.list.iter().map(|b| b.flags));
+        let mut fold = StatFold::default();
+        for b in &self.list {
+            for e in &b.effects {
+                // Stack 策略按层数放大：加法 ×n，乘法 value^n
+                let n = match b.policy {
+                    StackPolicy::Stack(_) => b.stacks,
+                    _ => 1,
+                };
+                let i = e.stat.index();
+                match e.op {
+                    Op::Add => fold.add[i] += e.value * n as f32,
+                    Op::Mul => fold.mul[i] *= e.value.powi(n as i32),
+                }
+            }
+        }
+        self.stats = fold;
+    }
+
     /// 施加 buff：按 name 与策略合并（刷新/取更久/叠层）或共存（独立）
     pub fn apply(&mut self, incoming: ActiveBuff) {
-        if let Some(existing) = self.0.iter_mut().find(|b| b.name == incoming.name) {
+        if let Some(existing) = self.list.iter_mut().find(|b| b.name == incoming.name) {
             match incoming.policy {
                 StackPolicy::Refresh => {
                     existing.secs = incoming.secs;
@@ -226,36 +329,38 @@ impl Buffs {
                     existing.secs = incoming.secs;
                 }
                 // 同名独立共存（罕见，但保留语义完整性）
-                StackPolicy::Independent => self.0.push(incoming),
+                StackPolicy::Independent => self.list.push(incoming),
             }
         } else {
-            self.0.push(incoming);
+            self.list.push(incoming);
         }
+        self.recompute();
     }
 
-    /// 是否带有某控制标志（任一活跃 buff）
+    /// 推进一个模拟步：倒计时、过期、重算缓存。返回容器是否已清空
+    pub fn tick(&mut self, dt: f32) -> bool {
+        for b in self.list.iter_mut() {
+            b.secs -= dt;
+        }
+        self.list.retain(|b| b.secs > 0.0);
+        self.recompute();
+        self.list.is_empty()
+    }
+
+    /// 是否带有某控制标志（读缓存，不遍历）
     pub fn has_cc(&self, flag: CCFlags) -> bool {
-        self.0.iter().any(|b| b.flags.contains(flag))
+        self.cc.contains(flag)
     }
 
-    /// 属性解析：基础值折叠全部相关修饰，得到最终值
+    /// 基础通道映射（读缓存映射，不遍历）
+    pub fn channels(&self) -> Channels {
+        cc_channels(self.cc)
+    }
+
+    /// 属性解析：读缓存拼基础值，final = (base + ΣAdd) × ΠMul
     pub fn stat(&self, base: f32, kind: StatKind) -> f32 {
-        let mut add = 0.0f32;
-        let mut mul = 1.0f32;
-        for b in &self.0 {
-            for e in b.effects.iter().filter(|e| e.stat == kind) {
-                // Stack 策略按层数放大：加法 ×n，乘法 value^n
-                let n = match b.policy {
-                    StackPolicy::Stack(_) => b.stacks,
-                    _ => 1,
-                };
-                match e.op {
-                    Op::Add => add += e.value * n as f32,
-                    Op::Mul => mul *= e.value.powi(n as i32),
-                }
-            }
-        }
-        (base + add) * mul
+        let i = kind.index();
+        (base + self.stats.add[i]) * self.stats.mul[i]
     }
 }
 

@@ -26,7 +26,8 @@ pub fn targeting(
         Option<&Monster>,
         Option<&Tower>,
         Option<&BuildingCard>,
-    ), Without<Stun>>,
+        Option<&Buffs>,
+    )>,
     monsters: Query<(Entity, &Monster, &Transform, Option<&Flying>)>,
     towers: Query<(Entity, &Tower, &Transform)>,
     buildings: Query<(Entity, &BuildingCard, &Transform)>,
@@ -63,7 +64,13 @@ pub fn targeting(
         flying: false,
     }));
 
-    for (entity, mut attacker, targeting, transform, monster, tower, building) in &mut units {
+    for (entity, mut attacker, targeting, transform, monster, tower, building, buffs) in
+        &mut units
+    {
+        // 禁索敌（眩晕/致盲）：实时查询 buff 标志位，无派生缓存
+        if buffs.map(|b| b.channels().cannot_seek).unwrap_or(false) {
+            continue;
+        }
         let pos = transform.translation;
         let faction = monster
             .map(|m| m.faction)

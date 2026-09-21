@@ -1,48 +1,19 @@
-//! 状态效果：Buffs（属性修饰 + 控制标志）的统一生命周期。
+//! 状态效果生命周期：Buffs 容器的倒计时、过期、清空删容器。
 //!
-//! 数据源唯一：Buffs 容器（时长/叠加/标志位都在里面）。
-//! 本系统每帧做三件事：
-//! 1. 倒计时、过期移除、清空删容器
-//! 2. 同步派生标记：任一活跃 buff 带 STUN 位 → 挂 Stun 标记组件
-//!    （让索敌/攻击/移动的 Without<Stun> 过滤保持 archetype 级快查）
-//! 3. 晕眩期间清冲锋蓄力
+//! 纯生命周期管理——不生产任何派生状态。数值与控制标志的生效由
+//! 消费方在用时实时查询（buffs.stat() / buffs.channels() / has_cc()），
+//! 无缓存、无同步（折叠成本是每单位几次位运算，缓存失效逻辑比它贵）。
 
 use bevy::prelude::*;
 
 use crate::components::*;
 use crate::constants::*;
 
-pub fn status_effects(
-    mut commands: Commands,
-    mut buffed: Query<(Entity, &mut Buffs, Option<&mut Charge>, Option<&Stun>)>,
-) {
-    for (e, mut buffs, mut charge, stun_marker) in &mut buffed {
-        // 1) 倒计时 + 过期
-        for b in buffs.0.iter_mut() {
-            b.secs -= TICK_DT;
-        }
-        buffs.0.retain(|b| b.secs > 0.0);
-
-        // 2) 晕眩：清冲锋蓄力；Stun 标记只在状态翻转时插/删一次
-        //    （进入晕眩晕插一次、最后一条晕眩晕过期删一次，中间零命令）
-        let stunned = buffs.has_cc(CCFlags::STUN);
-        if stunned {
-            if let Some(c) = charge.as_mut() {
-                c.progress = 0.0;
-            }
-        }
-        match (stunned, stun_marker.is_some()) {
-            (true, false) => {
-                commands.entity(e).insert(Stun);
-            }
-            (false, true) => {
-                commands.entity(e).remove::<Stun>();
-            }
-            _ => {} // 状态未变：不产生任何命令
-        }
-
-        // 3) 没有 buff 就删容器：消费方的 Option<&Buffs> 回到 None
-        if buffs.0.is_empty() {
+pub fn status_effects(mut commands: Commands, mut buffed: Query<(Entity, &mut Buffs)>) {
+    for (e, mut buffs) in &mut buffed {
+        // 倒计时、过期、标志缓存维护都内聚在 Buffs::tick；
+        // 清空后删容器，消费方的 Option<&Buffs> 回到 None
+        if buffs.tick(TICK_DT) {
             commands.entity(e).remove::<Buffs>();
         }
     }
@@ -64,8 +35,7 @@ mod tests {
         }
     }
 
-    /// 晕眩：完全无法行动（位置不动），晕完恢复移动；
-    /// Stun 标记与 Buffs 数据同步（出现/消失）
+    /// 晕眩：完全无法行动（位置不动），晕完恢复移动
     #[test]
     fn stun_freezes_monster() {
         let mut app = App::new();
@@ -91,7 +61,7 @@ mod tests {
                 test_attacker(),
                 seek(5.0),
                 Mover { speed: 1.5 },
-                Buffs(vec![stun_buff(1.0)]),
+                Buffs::new(stun_buff(1.0)),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, -5.0),
             ))
@@ -99,10 +69,7 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((status_effects, targeting, moving).chain());
-        schedule.run(world);
-        // 晕眩期间：标记已同步、位置不动
-        assert!(world.get::<Stun>(e).is_some(), "晕眩 buff 应同步出 Stun 标记");
-        for _ in 0..28 {
+        for _ in 0..29 {
             schedule.run(world); // 29 tick < 1.0s 晕眩
         }
         assert_eq!(
@@ -118,70 +85,39 @@ mod tests {
             "晕眩结束后必须恢复移动（走向塔）"
         );
         assert!(
-            world.get::<Stun>(e).is_none(),
-            "晕眩到期后 Stun 标记应随 Buffs 移除"
-        );
-        assert!(
             world.get::<Buffs>(e).is_none(),
             "晕眩到期后 Buffs 容器应被移除"
         );
     }
 
-    /// 晕眩叠加策略 Longer：重复施加取更久，短的不缩短长晕
+    /// 晕眩晕叠加策略 Longer：重复施加取更久，短的不缩短长晕
     #[test]
     fn stun_reapply_takes_longer() {
-        let mut buffs = Buffs(vec![stun_buff(2.0)]);
+        let mut buffs = Buffs::new(stun_buff(2.0));
         buffs.apply(stun_buff(0.5)); // 更短：不生效
-        assert_eq!(buffs.0[0].secs, 2.0);
+        assert_eq!(buffs.list[0].secs, 2.0);
         buffs.apply(stun_buff(3.0)); // 更长：取 3.0
-        assert_eq!(buffs.0[0].secs, 3.0);
-        assert_eq!(buffs.0.len(), 1, "同名晕眩不叠条目");
+        assert_eq!(buffs.list[0].secs, 3.0);
+        assert_eq!(buffs.list.len(), 1, "同名晕眩晕不叠条目");
     }
 
-    /// 无关 buff（狂暴）从头到尾不得产生 Stun 标记，
-    /// 也不得反复发出 insert/remove 命令（翻转 diff 的回归）
+    /// 通道映射：STUN 全禁，ROOT 只禁移动，DISARM 只禁攻击（机制→通道映射表）
     #[test]
-    fn rage_only_buff_never_gains_stun_marker() {
-        let mut app = App::new();
-        app.init_resource::<Assets<Mesh>>()
-            .init_resource::<Assets<StandardMaterial>>()
-            .init_resource::<super::super::ProjectileAssets>()
-            .init_resource::<WorldSnaps>();
-        let world = app.world_mut();
-        let e = world
-            .spawn((
-                test_monster(Faction::Player),
-                test_attacker(),
-                seek(5.0),
-                Mover { speed: 1.0 },
-                Buffs(vec![ActiveBuff {
-                    name: "Rage",
-                    secs: 10.0,
-                    stacks: 1,
-                    policy: StackPolicy::Refresh,
-                    flags: CCFlags::NONE,
-                    effects: vec![StatMod {
-                        stat: StatKind::MoveSpeed,
-                        op: Op::Mul,
-                        value: 2.0,
-                    }],
-                }]),
-                Health::new(2000.0),
-                Transform::from_xyz(0.0, 1.0, -5.0),
-            ))
-            .id();
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(status_effects);
-        for _ in 0..60 {
-            schedule.run(world);
-            assert!(
-                world.get::<Stun>(e).is_none(),
-                "纯狂暴 buff 不得产生 Stun 标记"
-            );
-        }
-        // 狂暴还在（10s > 2s），容器未删
-        assert!(world.get::<Buffs>(e).is_some());
+    fn cc_channel_mapping() {
+        let ch = cc_channels(CCFlags::STUN);
+        assert!(ch.cannot_move && ch.cannot_attack && ch.cannot_seek && ch.cannot_cast);
+        let ch = cc_channels(CCFlags::ROOT);
+        assert!(ch.cannot_move);
+        assert!(!ch.cannot_attack && !ch.cannot_seek && !ch.cannot_cast);
+        let ch = cc_channels(CCFlags::DISARM);
+        assert!(ch.cannot_attack);
+        assert!(!ch.cannot_move && !ch.cannot_seek);
+        // 组合：缠绕+缴械 = 各禁各的
+        let ch = cc_channels(CCFlags::ROOT.with(CCFlags::DISARM));
+        assert!(ch.cannot_move && ch.cannot_attack && !ch.cannot_seek);
+        // 无标志 = 无禁用
+        let ch = cc_channels(CCFlags::NONE);
+        assert!(!(ch.cannot_move || ch.cannot_attack || ch.cannot_seek || ch.cannot_cast));
     }
 
     /// 属性修饰器管线：合成规则（Add 先加、Mul 后乘、Stack 按层数幂）
@@ -220,6 +156,8 @@ mod tests {
         assert_eq!(buffs.stat(1.0, StatKind::AttackSpeed), 1.0);
         // 空容器 = 基础值
         assert_eq!(Buffs::default().stat(2.0, StatKind::MoveSpeed), 2.0);
+        // 纯数值 buff 不产生任何控制通道
+        assert!(!buffs.channels().cannot_move);
     }
 
     /// 叠加策略：Refresh 刷新不叠层，Stack 叠层到上限，层数进合成
@@ -241,8 +179,8 @@ mod tests {
         // Refresh：施三次仍是一层
         buffs.apply(mk(StackPolicy::Refresh));
         buffs.apply(mk(StackPolicy::Refresh));
-        assert_eq!(buffs.0.len(), 1);
-        assert_eq!(buffs.0[0].stacks, 1);
+        assert_eq!(buffs.list.len(), 1);
+        assert_eq!(buffs.list[0].stacks, 1);
         assert!((buffs.stat(1.0, StatKind::AttackSpeed) - 1.2).abs() < 1e-6);
 
         // Stack(3)：叠三层 = 1.2³
@@ -250,14 +188,14 @@ mod tests {
         for _ in 0..5 {
             stacked.apply(mk(StackPolicy::Stack(3)));
         }
-        assert_eq!(stacked.0[0].stacks, 3);
+        assert_eq!(stacked.list[0].stacks, 3);
         assert!((stacked.stat(1.0, StatKind::AttackSpeed) - 1.2f32.powi(3)).abs() < 1e-6);
 
         // 独立共存：两个同名独立 buff 叠乘 1.2 × 1.2
         let mut indep = Buffs::default();
         indep.apply(mk(StackPolicy::Independent));
         indep.apply(mk(StackPolicy::Independent));
-        assert_eq!(indep.0.len(), 2);
+        assert_eq!(indep.list.len(), 2);
         assert!((indep.stat(1.0, StatKind::AttackSpeed) - 1.44).abs() < 1e-6);
     }
 
@@ -287,25 +225,25 @@ mod tests {
                 test_attacker(),
                 seek(5.0),
                 Mover { speed: 1.0 },
-                Buffs(vec![ActiveBuff {
-                    name: "Rage",
-                    secs: 0.5,
-                    stacks: 1,
-                    policy: StackPolicy::Refresh,
-                    flags: CCFlags::NONE,
-                    effects: vec![
-                        StatMod {
-                            stat: StatKind::MoveSpeed,
-                            op: Op::Mul,
-                            value: 2.0,
-                        },
-                        StatMod {
-                            stat: StatKind::AttackSpeed,
-                            op: Op::Mul,
-                            value: 2.0,
-                        },
-                    ],
-                }]),
+                Buffs::new(ActiveBuff {
+                        name: "Rage",
+                        secs: 0.5,
+                        stacks: 1,
+                        policy: StackPolicy::Refresh,
+                        flags: CCFlags::NONE,
+                        effects: vec![
+                            StatMod {
+                                stat: StatKind::MoveSpeed,
+                                op: Op::Mul,
+                                value: 2.0,
+                            },
+                            StatMod {
+                                stat: StatKind::AttackSpeed,
+                                op: Op::Mul,
+                                value: 2.0,
+                            },
+                        ],
+                }),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, -5.0),
             ))

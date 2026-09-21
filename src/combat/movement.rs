@@ -18,9 +18,17 @@ pub fn moving(
         Option<&mut Charge>,
         Option<&Buffs>,
         Option<&Flying>,
-    ), Without<Stun>>,
+    )>,
 ) {
     for (m, mover, mut transform, attacker, mut charge, buffs, flying) in &mut movers {
+        // 禁移动（眩晕/缠绕）：实时查询 buff 标志位，无派生缓存；
+        // 被控期间冲锋蓄力清零
+        if buffs.map(|b| b.channels().cannot_move).unwrap_or(false) {
+            if let Some(c) = charge.as_deref_mut() {
+                c.progress = 0.0;
+            }
+            continue;
+        }
         let Some(target_entity) = attacker.target else {
             continue;
         };

@@ -27,13 +27,17 @@ pub fn attacking(
         Option<&Monster>,
         Option<&Tower>,
         Option<&BuildingCard>,
-    ), Without<Stun>>,
+    )>,
     mut healths: Query<&mut Health>,
     mut proj_assets: ResMut<ProjectileAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (mut attacker, transform, mut charge, buffs, monster, tower, building) in &mut units {
+        // 禁攻击（眩晕/缴械）：实时查询 buff 标志位，无派生缓存
+        if buffs.map(|b| b.channels().cannot_attack).unwrap_or(false) {
+            continue;
+        }
         let Some(target_entity) = attacker.target else {
             continue;
         };
