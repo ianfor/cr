@@ -469,7 +469,7 @@ pub fn spell_fx_spawn(
         // 每波：落地光环（delay = 波结算帧）+ 一批箭矢（飞行时长恰好
         // 在波结算帧落地）。其余法术瞬发单光环
         if card == 16 {
-            let ring_mesh = meshes.add(bevy::math::primitives::Torus::new(1.0, 0.06));
+            let ring_mesh = meshes.add(bevy::math::primitives::Torus::new(0.94, 1.06));
             let ring_mat = materials.add(StandardMaterial {
                 base_color: spell_fx_color(card),
                 unlit: true,
@@ -552,7 +552,7 @@ pub fn spell_fx_spawn(
                 duration: 0.45,
                 end_radius: spell.radius + 0.4,
             },
-            Mesh3d(meshes.add(bevy::math::primitives::Torus::new(1.0, 0.06))),
+            Mesh3d(meshes.add(bevy::math::primitives::Torus::new(0.94, 1.06))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: spell_fx_color(card),
                 unlit: true,

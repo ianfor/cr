@@ -69,7 +69,7 @@ pub fn setup(
     }
 
     // 法术范围指示圈：半径 1 的圆环，按法术半径缩放（x/z 缩放，环厚度随半径略变）
-    let ring = meshes.add(bevy::math::primitives::Torus::new(1.0, 0.05));
+    let ring = meshes.add(bevy::math::primitives::Torus::new(0.95, 1.05));
     let ring_mat = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.95, 0.6, 0.85),
         alpha_mode: AlphaMode::Blend,

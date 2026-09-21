@@ -1012,6 +1012,49 @@ mod zone_tests {
         assert_eq!(q.iter(app.world()).count(), 0, "区域外部署不应出兵");
     }
 
+    /// 万箭出牌链路：扣 3 圣水、手牌循环离手、生成 SpellVolley 多波实体
+    #[test]
+    fn arrows_cost_elixir_and_spawn_volley() {
+        let mut app = App::new();
+        app.insert_resource(Elixir {
+            player: 10.0,
+            enemy: 10.0,
+        });
+        app.insert_resource(Decks::shuffled());
+        // 手牌 0 强制为万箭（id 16），其余槽位用固定卡避免随机池重复干扰断言
+        app.world_mut().resource_mut::<Decks>().player = vec![16, 0, 1, 2, 3, 4, 5, 6];
+        app.init_resource::<Tick>();
+        app.init_resource::<CommandBuffer>();
+        app.init_resource::<CommandLog>();
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+
+        app.world_mut()
+            .resource_mut::<CommandBuffer>()
+            .local
+            .insert(
+                0,
+                vec![GameCommand::Deploy {
+                    faction: Faction::Player,
+                    card: 16,
+                    x: 0.0,
+                    z: -5.0,
+                }],
+            );
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(crate::combat::apply_commands);
+        schedule.run(app.world_mut());
+
+        assert_eq!(app.world().resource::<Elixir>().player, 7.0, "万箭应扣 3 圣水");
+        let mut q = app.world_mut().query::<&SpellVolley>();
+        assert_eq!(q.iter(app.world()).count(), 1, "应生成多波结算实体");
+        assert!(
+            !app.world().resource::<Decks>().player[..HAND_SIZE].contains(&16),
+            "打出的牌应离开手牌（循环到队尾）"
+        );
+    }
+
     /// 万箭多波结算：施放后第 15/27/39 tick 各落一波（每波 1/3 伤害），
     /// 波数耗尽销毁；只打敌怪/敌建筑（塔不吃），己方与圈外不受影响
     #[test]
