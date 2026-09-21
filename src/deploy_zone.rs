@@ -1,17 +1,24 @@
-//! 部署区域可视化：可放区（绿）与不可放区（红）半透明覆盖层
+//! 部署区域可视化：可放区（绿）与不可放区（红）半透明覆盖层，
+//! 以及法术卡的施法范围指示圈（选中时贴鼠标位置）。
 //! 表现层：只读模拟状态，不影响帧同步
 
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
-use crate::components::{Faction, KingTower, Tower};
-use crate::constants::{PRINCESS_Z, RIVER_HALF_WIDTH};
-use crate::net::NetClient;
+use crate::bot::BotMode;
+use crate::cards::SelectedCard;
+use crate::components::{Decks, Faction, KingTower, Tower};
+use crate::constants::{CardKind, CARDS, HAND_SIZE, PRINCESS_Z, RIVER_HALF_WIDTH};
+use crate::net::{NetClient, SimState};
 
 #[derive(Component)]
 pub struct DeployZone {
     kind: ZoneKind,
 }
+
+/// 法术施法范围指示圈：选中法术卡时贴鼠标位置显示作用半径
+#[derive(Component)]
+pub struct SpellRangeIndicator;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ZoneKind {
@@ -60,6 +67,24 @@ pub fn setup(
             NotShadowCaster,
         ));
     }
+
+    // 法术范围指示圈：半径 1 的圆环，按法术半径缩放（x/z 缩放，环厚度随半径略变）
+    let ring = meshes.add(bevy::math::primitives::Torus::new(1.0, 0.05));
+    let ring_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.95, 0.6, 0.85),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
+    commands.spawn((
+        SpellRangeIndicator,
+        Mesh3d(ring),
+        MeshMaterial3d(ring_mat),
+        Transform::from_xyz(0.0, 0.06, 0.0)
+            .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        Visibility::Hidden,
+        NotShadowCaster,
+    ));
 }
 
 /// 每帧按本方阵营与塔存活状态刷新区域显示
@@ -143,5 +168,73 @@ pub fn update(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+/// 法术施法范围指示圈：选中法术卡时贴鼠标位置显示作用半径（纯表现层）。
+/// 阵营判定与 gather_input 同规则——联网取己方、PvE 锁蓝方、
+/// 单机按悬停半场（指示的就是"此刻点击会放出的牌"）
+pub fn spell_range_update(
+    state: Res<SimState>,
+    net: Option<Res<NetClient>>,
+    bot_mode: Option<Res<BotMode>>,
+    window: Single<&Window>,
+    camera: Single<(&Camera, &GlobalTransform)>,
+    decks: Res<Decks>,
+    selected: Res<SelectedCard>,
+    mut indicator: Query<(&mut Transform, &mut Visibility), With<SpellRangeIndicator>>,
+) {
+    let mut hide = || {
+        for (_, mut v) in indicator.iter_mut() {
+            *v = Visibility::Hidden;
+        }
+    };
+    if !matches!(*state, SimState::Solo | SimState::Playing) {
+        hide();
+        return;
+    }
+    let Some(cursor) = window.cursor_position() else {
+        hide();
+        return;
+    };
+    let (camera, camera_transform) = *camera;
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
+        hide();
+        return;
+    };
+    let Some(t) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) else {
+        hide();
+        return;
+    };
+    let mut point = ray.get_point(t);
+    // 与 gather_input 相同的竞技场钳制
+    point.x = point.x.clamp(-8.0, 8.0);
+    point.z = point.z.clamp(-14.0, 14.0);
+    let faction = match net.as_ref() {
+        Some(n) => match Faction::from_index(n.my_index) {
+            Some(f) => f,
+            None => {
+                hide();
+                return;
+            }
+        },
+        None if bot_mode.is_some() => Faction::Player,
+        None => {
+            if point.z < 0.0 {
+                Faction::Player
+            } else {
+                Faction::Enemy
+            }
+        }
+    };
+    let card = decks.queue(faction)[selected.0.min(HAND_SIZE - 1)];
+    let CardKind::Spell(spell) = &CARDS[card as usize].kind else {
+        hide();
+        return; // 非法术卡：显示的是部署区域，不显示范围圈
+    };
+    for (mut transform, mut v) in &mut indicator {
+        transform.translation = Vec3::new(point.x, 0.06, point.z);
+        transform.scale = Vec3::new(spell.radius, 1.0, spell.radius);
+        *v = Visibility::Visible;
     }
 }

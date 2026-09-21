@@ -23,7 +23,9 @@ pub struct TowerSpec {
 /// 与浮点累加顺序变化，旧录像结果失真
 /// v7：推挤改为消费帧首快照（坐标同源配对）——本帧移动新产生的
 /// 重叠下一帧才被解开，旧录像结果失真
-pub const SIM_VERSION: u32 = 7;
+/// v8：万箭齐发改多波结算（3 波×1/3 伤害，首波 0.5s 波隔 0.4s，
+/// 按落波时位置判定——可走位躲），旧录像结果失真
+pub const SIM_VERSION: u32 = 8;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）
@@ -160,9 +162,9 @@ pub struct RageSpec {
     pub secs: f32,
 }
 
-/// 法术效果：瞬发，作用目标点 (x, z)
+/// 法术效果：作用目标点 (x, z)。waves=1 瞬发结算；waves>1 分波延迟结算
 pub struct SpellSpec {
-    /// 直接伤害（0 = 无伤害）
+    /// 直接伤害（0 = 无伤害）；分波时为总量，每波 damage/waves
     pub damage: f32,
     /// 作用半径
     pub radius: f32,
@@ -170,7 +172,17 @@ pub struct SpellSpec {
     pub stun_secs: f32,
     /// 狂暴（对己方单位生效）
     pub rage: Option<RageSpec>,
+    /// 伤害分波数（1 = 瞬发；万箭齐发 3 波）
+    pub waves: u32,
 }
+
+// 多段法术时间表（帧）：**结算与特效的唯一权威**——
+// 第 i 波在施法帧 + FIRST + i×INTERVAL 结算，箭矢飞行/光环扩散
+// 的落点时刻从这张表反推，保证特效与伤害逐帧对齐
+/// 首波延迟（15 帧 = 0.5s，即箭矢从王塔飞到落点的时间）
+pub const SPELL_WAVE_FIRST_TICKS: u32 = 15;
+/// 波间隔（12 帧 = 0.4s）
+pub const SPELL_WAVE_INTERVAL_TICKS: u32 = 12;
 
 /// 建筑卡的攻击属性（加农炮/特斯拉类）
 #[derive(Clone, Copy)]
@@ -258,11 +270,11 @@ pub const CARDS: [CardSpec; 21] = [
     // 飞龙：飞行远程溅射，对空对地
     CardSpec { id: 14, name: "BabyDragon", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, flying: true, ..m(1200.0, 160.0, 2.5, 4.0, 1.5, 0.6, 0.8, true, 1.6) }) },
     // ===== 法术（瞬发，全场任意格子）=====
-    CardSpec { id: 15, name: "Zap", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 160.0, radius: 1.2, stun_secs: 0.5, rage: None }) },
-    CardSpec { id: 16, name: "Arrows", cost: 3.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 300.0, radius: 2.0, stun_secs: 0.0, rage: None }) },
-    CardSpec { id: 17, name: "Fireball", cost: 4.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 550.0, radius: 1.5, stun_secs: 0.0, rage: None }) },
+    CardSpec { id: 15, name: "Zap", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 160.0, radius: 1.2, stun_secs: 0.5, rage: None, waves: 1 }) },
+    CardSpec { id: 16, name: "Arrows", cost: 3.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 300.0, radius: 2.0, stun_secs: 0.0, rage: None, waves: 3 }) },
+    CardSpec { id: 17, name: "Fireball", cost: 4.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 550.0, radius: 1.5, stun_secs: 0.0, rage: None, waves: 1 }) },
     // 狂暴：己方单位攻速/移速 +35%，持续 6s
-    CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { pct: 0.35, secs: 6.0 }) }) },
+    CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { pct: 0.35, secs: 6.0 }), waves: 1 }) },
     // ===== 建筑（仅己方半场可部署，有寿命）=====
     // 加农炮：仅对地
     CardSpec { id: 19, name: "Cannon", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 1400.0, lifetime_secs: 30.0, attack: Some(BuildingAttack { damage: 90.0, range: 5.0, interval: 0.9, hits_air: false }), spawner: None }) },

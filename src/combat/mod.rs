@@ -393,16 +393,36 @@ pub fn despawn_dead(
 // 不读写任何模拟状态（CommandLog 只读），VFX 实体不带模拟组件，
 // 不影响帧同步确定性与训练环境（sim_env 不跑 Update）。
 
-/// 扩散光环特效
+/// 扩散光环特效（delay > 0 时等待到点才扩散——多段法术每波一个）
 #[derive(Component)]
 pub struct SpellFx {
     /// 已播放秒数
     t: f32,
+    /// 起播延迟（秒；0 = 立即）
+    delay: f32,
     /// 总时长
     duration: f32,
     /// 扩散终半径（= 法术作用半径，略放大）
     end_radius: f32,
 }
+
+/// 万箭齐发的箭矢实体（纯表现层）：从施法方国王塔顶抛物线飞向圈内散布落点。
+/// **落点时刻 = 对应波数的结算帧**（发射延迟/飞行时长从 SPELL_WAVE 时间表
+/// 反推，特效与伤害逐帧对齐）；法术伤害由 SpellVolley 在模拟链内结算
+#[derive(Component)]
+pub struct SpellArrow {
+    from: Vec3,
+    to: Vec3,
+    /// 已流逝时间（未到 delay 前停在塔顶）
+    t: f32,
+    delay: f32,
+    duration: f32,
+    /// 抛物线峰值高度
+    arc: f32,
+}
+
+/// 万箭齐发每一波的箭矢数量
+const ARROWS_PER_WAVE: u32 = 6;
 
 /// 法术卡的特效颜色
 fn spell_fx_color(card: u8) -> Color {
@@ -422,6 +442,7 @@ pub fn spell_fx_spawn(
     mut cursor: Local<usize>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
 ) {
     // 世界重置后日志清空：cursor 回退到 0 重新跟（seek 回退重追时特效会重放，无害）
     if *cursor > log.0.len() {
@@ -431,16 +452,103 @@ pub fn spell_fx_spawn(
         let (_, cmd) = log.0[*cursor];
         *cursor += 1;
         // GameCommand 目前只有 Deploy 一种，模式匹配保留扩展性
-        let GameCommand::Deploy { card, x, z, .. } = cmd;
+        let GameCommand::Deploy {
+            faction,
+            card,
+            x,
+            z,
+            ..
+        } = cmd;
         let Some(spec) = CARDS.iter().find(|c| c.id == card) else {
             continue;
         };
         let CardKind::Spell(spell) = &spec.kind else {
             continue;
         };
+        // 万箭齐发（Arrows，id 16）：多波结算，特效吃同一张时间表——
+        // 每波：落地光环（delay = 波结算帧）+ 一批箭矢（飞行时长恰好
+        // 在波结算帧落地）。其余法术瞬发单光环
+        if card == 16 {
+            let ring_mesh = meshes.add(bevy::math::primitives::Torus::new(1.0, 0.06));
+            let ring_mat = materials.add(StandardMaterial {
+                base_color: spell_fx_color(card),
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            });
+            for wave in 0..spell.waves {
+                // 本波落地时刻（秒）——与模拟侧 SpellVolley 的波帧一致
+                let land = (SPELL_WAVE_FIRST_TICKS + wave * SPELL_WAVE_INTERVAL_TICKS) as f32
+                    * TICK_DT;
+                // 本波光环：到点扩散
+                commands.spawn((
+                    SpellFx {
+                        t: 0.0,
+                        delay: land,
+                        duration: 0.45,
+                        end_radius: spell.radius + 0.4,
+                    },
+                    Mesh3d(ring_mesh.clone()),
+                    MeshMaterial3d(ring_mat.clone()),
+                    Transform::from_translation(Vec3::new(x, 0.25, z))
+                        .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                    NotShadowCaster,
+                ));
+                // 本波箭矢：从施法方王塔顶射出（王塔已毁则跳过，对局将终）
+                let Some(king_top) = towers
+                    .iter()
+                    .find(|(t, _, k)| k.is_some() && t.faction == faction)
+                    .map(|(_, tr, _)| tr.translation + Vec3::Y * 4.2)
+                else {
+                    continue;
+                };
+                let shaft = meshes.add(Cylinder::new(0.04, 0.55));
+                let mat = materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.95, 0.7, 0.35),
+                    unlit: true,
+                    ..default()
+                });
+                for i in 0..ARROWS_PER_WAVE {
+                    // 确定性散布：环形分布（每波旋转错开）+ 拱高错落
+                    let total = ARROWS_PER_WAVE * spell.waves;
+                    let angle = (i + wave * ARROWS_PER_WAVE) as f32 / total as f32
+                        * std::f32::consts::TAU
+                        + 0.3;
+                    let rr = ((i * 7 + wave * 3) % 13) as f32 / 13.0;
+                    let dist = spell.radius * 0.85 * (0.25 + 0.75 * rr);
+                    let jitter = ((i * 11 + wave) % 5) as f32 / 5.0;
+                    // 发射时刻：波间隔 × 波序 + 小错落；飞行时长 = 落地帧 - 发射
+                    // （保证箭矢恰好在波结算帧落地）
+                    let launch = wave as f32 * SPELL_WAVE_INTERVAL_TICKS as f32 * TICK_DT
+                        + (i % 3) as f32 * 0.03;
+                    commands.spawn((
+                        SpellArrow {
+                            from: king_top
+                                + Vec3::new(angle.cos() * 0.5, 0.0, angle.sin() * 0.5),
+                            to: Vec3::new(
+                                x + angle.cos() * dist,
+                                0.1,
+                                z + angle.sin() * dist,
+                            ),
+                            t: 0.0,
+                            delay: launch,
+                            duration: land - launch,
+                            arc: 3.0 + 1.8 * jitter,
+                        },
+                        Mesh3d(shaft.clone()),
+                        MeshMaterial3d(mat.clone()),
+                        Transform::from_translation(king_top),
+                        NotShadowCaster,
+                    ));
+                }
+            }
+            continue;
+        }
+        // 其余法术：瞬发单光环
         commands.spawn((
             SpellFx {
                 t: 0.0,
+                delay: 0.0,
                 duration: 0.45,
                 end_radius: spell.radius + 0.4,
             },
@@ -458,6 +566,36 @@ pub fn spell_fx_spawn(
     }
 }
 
+/// 万箭飞行：抛物线插值 + 朝向轨迹切线（圆柱默认沿 Y），落地销毁
+pub fn spell_arrows_fly(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut arrows: Query<(Entity, &mut SpellArrow, &mut Transform)>,
+) {
+    for (e, mut a, mut tr) in &mut arrows {
+        a.t += time.delta_secs();
+        if a.t < a.delay {
+            continue; // 未发射：停在塔顶
+        }
+        let k = ((a.t - a.delay) / a.duration).min(1.0);
+        // 轨迹点：水平插值 + 4k(1-k) 拱高
+        let p = |k: f32| {
+            a.from.lerp(a.to, k) + Vec3::Y * (a.arc * 4.0 * k * (1.0 - k))
+        };
+        tr.translation = p(k);
+        // 朝向轨迹切线（k 逼近 1 时切线退化，兜底直指落点）
+        let k2 = (k + 0.02).min(1.0);
+        let mut dir = p(k2) - p(k);
+        if dir.length_squared() < 1e-6 {
+            dir = a.to - a.from;
+        }
+        tr.rotation = Quat::from_rotation_arc(Vec3::Y, dir.normalize());
+        if k >= 1.0 {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
 /// 光环动画：半径 0 → end_radius 扩散，透明度淡出，播完销毁
 pub fn spell_fx_update(
     mut commands: Commands,
@@ -472,13 +610,14 @@ pub fn spell_fx_update(
 ) {
     for (e, mut s, mut transform, mat) in &mut fx {
         s.t += time.delta_secs();
-        let k = (s.t / s.duration).min(1.0);
+        // delay 期间 k 钳在 0（半径 0 不可见），到点才开始扩散
+        let k = ((s.t - s.delay) / s.duration).clamp(0.0, 1.0);
         let r = s.end_radius * k;
         transform.scale = Vec3::new(r, r, 1.0);
         if let Some(mut m) = materials.get_mut(&mat.0) {
             m.base_color.set_alpha((1.0 - k) * 0.9);
         }
-        if s.t >= s.duration {
+        if s.t >= s.delay + s.duration {
             commands.entity(e).despawn();
         }
     }

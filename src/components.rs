@@ -403,6 +403,28 @@ pub struct Tower {
 #[derive(Component)]
 pub struct KingTower;
 
+/// 多段法术（waves > 1，万箭齐发）：分波延迟结算的范围伤害实体。
+/// 时间表（constants.rs 的 SPELL_WAVE_FIRST_TICKS / INTERVAL_TICKS）
+/// 是结算与特效的共同权威——箭矢飞行与光环扩散的落点时刻
+/// 都从这张表反推。挂 SimTick 链逐帧推进（确定性）。
+/// 带 Transform 纯为让 reset_world 能把它当场景实体清掉
+#[derive(Component)]
+pub struct SpellVolley {
+    pub faction: Faction,
+    /// 每波伤害（= 卡牌伤害 / 波数，总量守恒）
+    pub damage: f32,
+    /// 作用半径（按落波时刻的位置判定——期间可以走位躲）
+    pub radius: f32,
+    pub x: f32,
+    pub z: f32,
+    /// 剩余波数
+    pub waves_left: u32,
+    /// 距下一波帧数（每帧 -1，到 0 结算一波后重置为 interval）
+    pub next_in: u32,
+    /// 波间隔（帧）
+    pub interval: u32,
+}
+
 #[derive(Component)]
 pub struct Health {
     pub current: f32,

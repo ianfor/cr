@@ -221,8 +221,30 @@ pub fn play_card(
                 );
             }
         }
-        // 法术：瞬发，直接结算（伤害对敌，狂暴/晕眩晕对己/敌——都打包成 buff）
+        // 法术：瞬发结算（伤害对敌，狂暴/晕眩对己/敌——都打包成 buff）；
+        // 多段法术（waves > 1）改为 SpellVolley 分波延迟结算
         CardKind::Spell(spell) => {
+            if spell.waves > 1 {
+                // 万箭齐发类：伤害按波落地（首波 SPELL_WAVE_FIRST_TICKS 帧、
+                // 波隔 SPELL_WAVE_INTERVAL_TICKS 帧），按落波时刻的位置判定。
+                // 狂暴/晕眩仍属瞬发效果——多段卡目前不带这些（带了也只该
+                // 在首波生效，届时再扩展）
+                commands.spawn((
+                    SpellVolley {
+                        faction,
+                        damage: spell.damage / spell.waves as f32,
+                        radius: spell.radius,
+                        x: pos.x,
+                        z: pos.z,
+                        waves_left: spell.waves,
+                        next_in: SPELL_WAVE_FIRST_TICKS,
+                        interval: SPELL_WAVE_INTERVAL_TICKS,
+                    },
+                    // 带 Transform：reset_world 按 Transform/Node 清场景实体
+                    Transform::default(),
+                ));
+                return;
+            }
             for (e, mut hp, tr, monster, building, mut buffs) in spell_targets.iter_mut() {
                 let target_faction = match (&monster, &building) {
                     (Some(m), _) => m.faction,
@@ -288,6 +310,52 @@ pub fn play_card(
         // 建筑：先出虚影，放置时间结束生成建筑实体（process_deploying 处理）
         CardKind::Building(_) => {
             spawn_ghost(commands, meshes, materials, faction, spec, pos);
+        }
+    }
+}
+
+/// 多段法术逐帧推进（帧同步链内，紧随 apply_commands）：
+/// 到点结算一波——目标规则与瞬发法术完全一致（敌怪 + 敌建筑卡，
+/// 中心距 ≤ 半径，塔不吃法术）。波间倒数，波数耗尽销毁。
+/// 按落波时刻的位置判定：期间走位可以躲出圈（对齐 CR 万箭手感）
+pub fn spell_volley_tick(
+    mut commands: Commands,
+    mut volleys: Query<(Entity, &mut SpellVolley)>,
+    mut targets: Query<(
+        &mut Health,
+        &Transform,
+        Option<&Monster>,
+        Option<&BuildingCard>,
+    )>,
+) {
+    for (ve, mut v) in &mut volleys {
+        if v.next_in > 0 {
+            v.next_in -= 1;
+            continue;
+        }
+        let pos = Vec3::new(v.x, 0.0, v.z);
+        for (mut hp, tr, monster, building) in targets.iter_mut() {
+            let target_faction = match (&monster, &building) {
+                (Some(m), _) => m.faction,
+                (None, Some(b)) => b.faction,
+                _ => continue, // 塔等其余实体不吃法术（与瞬发分支一致）
+            };
+            if target_faction == v.faction {
+                continue;
+            }
+            let mut d = tr.translation - pos;
+            d.y = 0.0;
+            if d.length() <= v.radius {
+                hp.current -= v.damage;
+            }
+        }
+        v.waves_left -= 1;
+        if v.waves_left == 0 {
+            commands.entity(ve).despawn();
+        } else {
+            // −1 补栅栏：本帧已结算（next_in 从 0 起数），
+            // 重置 interval−1 使波间隔恰为 interval 帧
+            v.next_in = v.interval - 1;
         }
     }
 }
@@ -942,5 +1010,74 @@ mod zone_tests {
         );
         let mut q = app.world_mut().query::<&Monster>();
         assert_eq!(q.iter(app.world()).count(), 0, "区域外部署不应出兵");
+    }
+
+    /// 万箭多波结算：施放后第 15/27/39 tick 各落一波（每波 1/3 伤害），
+    /// 波数耗尽销毁；只打敌怪/敌建筑（塔不吃），己方与圈外不受影响
+    #[test]
+    fn arrows_volley_deals_three_waves_on_schedule() {
+        let mut app = App::new();
+        let world = app.world_mut();
+        // 敌怪圈内 / 敌怪圈外 / 己方怪圈内
+        let inside = world
+            .spawn((
+                crate::combat::test_monster(Faction::Enemy),
+                Health::new(1000.0),
+                Transform::from_xyz(1.0, 1.0, 0.0),
+            ))
+            .id();
+        let outside = world
+            .spawn((
+                crate::combat::test_monster(Faction::Enemy),
+                Health::new(1000.0),
+                Transform::from_xyz(9.0, 1.0, 0.0),
+            ))
+            .id();
+        let ally = world
+            .spawn((
+                crate::combat::test_monster(Faction::Player),
+                Health::new(1000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        // 3 波 × 100，半径 2（模拟 play_card 的多波分支）
+        world.spawn((
+            SpellVolley {
+                faction: Faction::Player,
+                damage: 100.0,
+                radius: 2.0,
+                x: 0.0,
+                z: 0.0,
+                waves_left: 3,
+                next_in: SPELL_WAVE_FIRST_TICKS,
+                interval: SPELL_WAVE_INTERVAL_TICKS,
+            },
+            Transform::default(),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(spell_volley_tick);
+        // run k = 施放后第 k-1 tick（run 1 = tick 0，同帧首跑）
+        let hp = |w: &mut World, e: Entity| w.get::<Health>(e).unwrap().current;
+        let mut wave_tick = |n: usize| {
+            // 三波分别在 tick 15 / 27 / 39（= run 16 / 28 / 40）
+            for _ in 0..n {
+                schedule.run(world);
+            }
+            hp(world, inside)
+        };
+        assert_eq!(wave_tick(15), 1000.0, "首波前（0..14 tick）不应掉血");
+        assert_eq!(wave_tick(1), 900.0, "首波在施放后第 15 tick 落地");
+        assert_eq!(wave_tick(11), 900.0, "波隔期间不应掉血");
+        assert_eq!(wave_tick(1), 800.0, "第二波在 27 tick 落地");
+        assert_eq!(wave_tick(11), 800.0, "波隔期间不应掉血");
+        assert_eq!(wave_tick(1), 700.0, "第三波在 39 tick 落地");
+        // 总量守恒：3 × 100 = 300
+        assert_eq!(hp(world, outside), 1000.0, "圈外不吃伤害");
+        assert_eq!(hp(world, ally), 1000.0, "己方不吃伤害");
+        // 波数耗尽：实体销毁（命令在 run 结束后应用）
+        schedule.run(world);
+        let mut q = world.query::<&SpellVolley>();
+        assert_eq!(q.iter(world).count(), 0, "波数耗尽后实体应销毁");
     }
 }

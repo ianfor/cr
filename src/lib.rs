@@ -144,33 +144,48 @@ pub fn run_app() {
     .add_systems(Update, bot::bot_think)
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
-    // 法术施法特效（纯表现层）
-    .add_systems(Update, (combat::spell_fx_spawn, combat::spell_fx_update).chain())
+    // 法术施法特效（纯表现层；万箭箭矢的落点时刻与波结算帧对齐）
+    .add_systems(
+        Update,
+        (
+            combat::spell_fx_spawn,
+            combat::spell_fx_update,
+            combat::spell_arrows_fly,
+        )
+            .chain(),
+    )
     // 确定性模拟链挂在 SimTick：实时由 drive_sim 按 30Hz 驱动，
     // 追帧/回放由 drive_replay 连续驱动
     .add_systems(
         SimTick,
         (
-            combat::collect_inputs,
-            combat::apply_commands,
-            cards::process_deploying,
-            combat::status_effects,
-            combat::targeting,
-            combat::attacking,
-            combat::moving,
-            combat::building_lifetime,
-            combat::building_spawner,
-            combat::move_projectiles,
-            combat::separate_monsters,
-            combat::separate_from_statics,
-            combat::keep_out_of_river,
-            combat::despawn_dead,
-            match_flow::tick_timer,
-            combat::check_game_over,
-            net::notify_game_over,
-            elixir::regen,
-            net::send_hash,
-            combat::advance_tick,
+            (
+                combat::collect_inputs,
+                combat::apply_commands,
+                cards::spell_volley_tick,
+                cards::process_deploying,
+                combat::status_effects,
+                combat::targeting,
+                combat::attacking,
+                combat::moving,
+                combat::building_lifetime,
+                combat::building_spawner,
+            )
+                .chain(),
+            (
+                combat::move_projectiles,
+                combat::separate_monsters,
+                combat::separate_from_statics,
+                combat::keep_out_of_river,
+                combat::despawn_dead,
+                match_flow::tick_timer,
+                combat::check_game_over,
+                net::notify_game_over,
+                elixir::regen,
+                net::send_hash,
+                combat::advance_tick,
+            )
+                .chain(),
         )
             .chain(),
     )
@@ -185,6 +200,7 @@ pub fn run_app() {
             elixir::update_ui,
             cards::update_card_ui,
             deploy_zone::update,
+            deploy_zone::spell_range_update,
             match_flow::update_countdown,
             match_flow::result_pop,
             match_flow::fireworks_spawn,
