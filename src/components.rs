@@ -186,40 +186,31 @@ pub fn cc_channels(cc: CCFlags) -> Channels {
 // buffs.stat(基础值, StatKind) 一次性合成最终值。
 // 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
 
-/// 受修饰的属性域（加新属性 = 加一个枚举值 + 消费方一行查询）
+/// 受修饰的属性域（加新属性 = 加一个枚举值，缓存数组随 Max 自动扩容）
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
 pub enum StatKind {
     MoveSpeed,
     AttackSpeed,
     // 扩展位：Damage / DamageTaken / Armor / ...
+    /// 属性域数量哨兵（必须保持最后）：数组长度用它定，禁止作为属性使用
+    Max,
 }
 
 impl StatKind {
-    /// 属性域数量（合成缓存数组长度）
-    pub const COUNT: usize = 2;
-
     fn index(self) -> usize {
-        match self {
-            StatKind::MoveSpeed => 0,
-            StatKind::AttackSpeed => 1,
-        }
+        self as usize
     }
 }
 
-/// 每属性域的合成缓存：(加法和, 乘法积)，附加/过期时重算，
+/// 每属性域的合成缓存 [ΣAdd, ΠMul]，附加/过期时重算，
 /// 消费方 stat() 读缓存拼基础值：final = (base + add) × mul
 #[derive(Clone, Copy)]
-struct StatFold {
-    add: [f32; StatKind::COUNT],
-    mul: [f32; StatKind::COUNT],
-}
+struct StatFold([[f32; 2]; StatKind::Max as usize]);
 
 impl Default for StatFold {
     fn default() -> Self {
-        StatFold {
-            add: [0.0; StatKind::COUNT],
-            mul: [1.0; StatKind::COUNT],
-        }
+        StatFold([[0.0, 1.0]; StatKind::Max as usize])
     }
 }
 
@@ -301,10 +292,17 @@ impl Buffs {
                     StackPolicy::Stack(_) => b.stacks,
                     _ => 1,
                 };
-                let i = e.stat.index();
+                let slot = &mut fold.0[e.stat.index()];
                 match e.op {
-                    Op::Add => fold.add[i] += e.value * n as f32,
-                    Op::Mul => fold.mul[i] *= e.value.powi(n as i32),
+                    Op::Add => slot[0] += e.value * n as f32,
+                    Op::Mul => {
+                        // 层叠乘法用显式连乘：powi 依赖 libm/compiler-rt 实现，
+                        // 跨平台（Windows/Android）可能在末位不一致——帧同步
+                        // 要求逐比特确定；连乘顺序固定，IEEE 保证全平台一致
+                        for _ in 0..n {
+                            slot[1] *= e.value;
+                        }
+                    }
                 }
             }
         }
@@ -359,8 +357,8 @@ impl Buffs {
 
     /// 属性解析：读缓存拼基础值，final = (base + ΣAdd) × ΠMul
     pub fn stat(&self, base: f32, kind: StatKind) -> f32 {
-        let i = kind.index();
-        (base + self.stats.add[i]) * self.stats.mul[i]
+        let [add, mul] = self.stats.0[kind.index()];
+        (base + add) * mul
     }
 }
 
