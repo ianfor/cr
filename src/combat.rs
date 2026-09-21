@@ -318,9 +318,8 @@ fn can_target(attacker: &Monster, s: &UnitSnap) -> bool {
 /// 怪物 AI（属性来自卡牌规格）：
 /// - 索敌：aggro 范围内"最近目标"（塔/怪物/建筑一视同仁，修复塔沦为兜底的旧 bug）；
 ///   aggro 内没有目标 → 全场最近的敌方建筑（塔/建筑卡）作为行军方向
-/// - 目标锁定：一旦锁定不切换。目标消失（死亡）解锁；
-///   已交战（进过攻击范围）后被挤出攻击范围 = 被打断解锁；
-///   未交战（走向远目标途中）不因距离解锁，也不被新进 aggro 的怪抢走目标
+/// - 目标锁定：交战中（进过攻击范围）锁定不换，直到目标死亡或被挤出攻击范围
+///   （打断）；未交战（行军中）每帧重评最近目标——对手进场立即回应
 /// - 进入攻击范围 → 停下攻击：近战直接扣血（可溅射），远程发射子弹
 /// - 冲锋（王子）：持续移动蓄力，蓄满移速×，首击伤害×，命中或被晕清零
 /// - 晕眩：无法移动/攻击；狂暴：攻速/移速×rage_mult
@@ -388,8 +387,6 @@ pub fn monster_ai(
         // 2) 已交战（进过攻击范围）后被挤出攻击范围 = 被打断（比如站桩输出时
         //    被新放置的怪挤开）。解除后下方立刻重新索敌，aggro 内最近的目标
         //    会被重新锁定（可能就是挤它的那只）。
-        //    未交战的单位（走向远目标途中）不因距离解锁——否则任何进入
-        //    aggro 的怪都会抢走目标（历史 bug：塔的优先级被压到怪物之下）
         if let Some(e) = monster.target {
             let invalid = match snaps
                 .iter()
@@ -407,10 +404,13 @@ pub fn monster_ai(
                 monster.engaged = false;
             }
         }
-        // 无锁定 → 索敌：
-        // a) aggro 内最近的合法目标（塔/怪物/建筑一视同仁）
-        // b) 都没有 → 全场最近的敌方建筑（行军方向；只攻建筑单位同样适用）
-        if monster.target.is_none() {
+        // 索敌（塔/怪物/建筑一视同仁取最近，修复塔沦为兜底的历史 bug）：
+        // a) 交战中：锁定不换目标（防距离抖动导致的 flip-flop），直到目标
+        //    死亡或被打断——与 CR 一致（打塔的骑士不会因小怪进场弃塔）
+        // b) 未交战（行军中）：每帧重评 aggro 内最近目标——对手/防守单位
+        //    进场立即回应（骷髅不再无视贴脸敌人，防守怪不再无视进攻怪）
+        // c) aggro 内没有目标 → 全场最近的敌方建筑（行军方向）
+        if !monster.engaged {
             let nearest = |filter: &dyn Fn(&UnitSnap) -> bool| {
                 snaps
                     .iter()
@@ -1273,11 +1273,10 @@ mod lock_retarget_tests {
         test_monster(faction)
     }
 
-    /// 走向塔途中的怪（未交战）保持目标：不被新进 aggro 的敌怪抢走锁定。
-    /// 这是索敌修复的核心：旧逻辑塔是"兜底目标"，任何进 aggro 的怪都能抢锁，
-    /// 导致单位反复横跳；新逻辑锁定只在目标死亡或交战后被打断时解除
+    /// 行军中的怪（未交战）必须回应进入 aggro 的敌人：改锁更近的怪。
+    /// 墓碑骷髅/防守怪"无视贴脸敌人只走塔"的 bug 回归（未交战时每帧重评最近目标）
     #[test]
-    fn walking_monster_keeps_tower_target() {
+    fn marching_monster_retargets_to_enemy_entering_aggro() {
         let mut app = App::new();
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
@@ -1308,22 +1307,71 @@ mod lock_retarget_tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(monster_ai);
         schedule.run(world);
-        // 出生时无怪可打 → 锁塔
+        // 出生时无怪可打 → 锁塔（行军方向）
         assert_eq!(world.get::<Monster>(m).unwrap().target, Some(tower));
         assert!(!world.get::<Monster>(m).unwrap().engaged);
 
-        // 敌方怪物进入 aggro：未交战的单位必须保持锁塔（不被抢锁）
+        // 敌方怪物进入 aggro（距离 4 < 塔 17.5）：未交战必须改锁更近的怪
+        let e = world
+            .spawn((
+                mk(Faction::Enemy),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -1.0),
+            ))
+            .id();
+        schedule.run(world);
+        assert_eq!(
+            world.get::<Monster>(m).unwrap().target,
+            Some(e),
+            "行军中的单位必须回应进入 aggro 的更近敌人"
+        );
+    }
+
+    /// 优先级一视同仁：塔比怪更近时锁塔（历史 bug 是怪物永远优先于塔）
+    #[test]
+    fn nearer_tower_beats_farther_monster() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>();
+        let world = app.world_mut();
+
+        let tower = world
+            .spawn((
+                Tower {
+                    faction: Faction::Enemy,
+                    radius: 1.0,
+                    attack_range: 6.0,
+                    target: None,
+                },
+                Health::new(6000.0),
+                Transform::from_xyz(0.0, 0.0, -1.0), // 距我 4（aggro 内）
+            ))
+            .id();
+        // 敌怪在更远处（距我 4.5，也在 aggro 内）
         world.spawn((
             mk(Faction::Enemy),
             Health::new(2000.0),
             AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
-            Transform::from_xyz(0.0, 1.0, -1.0),
+            Transform::from_xyz(4.5, 1.0, -5.0),
         ));
+        let m = world
+            .spawn((
+                mk(Faction::Player),
+                Health::new(2000.0),
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(monster_ai);
         schedule.run(world);
         assert_eq!(
             world.get::<Monster>(m).unwrap().target,
             Some(tower),
-            "未交战单位的锁定不应被新进 aggro 的怪抢走"
+            "aggro 内塔更近时必须锁塔（塔不是兜底目标）"
         );
     }
 }
