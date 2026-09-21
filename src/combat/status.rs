@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn buff_stat_composition() {
         let mut buffs = Buffs::default();
-        // 狂暴：移速 ×1.35
+        // 狂暴：移速 +35%
         buffs.apply(ActiveBuff {
             name: "Rage",
             secs: 6.0,
@@ -133,11 +133,11 @@ mod tests {
             flags: CCFlags::NONE,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
-                op: Op::Mul,
-                value: 1.35,
+                op: Op::Pct,
+                value: 0.35,
             }],
         });
-        // 疾跑：移速 +2（固定值）
+        // 疾跑：移速 +2（前置平顶，吃百分比）
         buffs.apply(ActiveBuff {
             name: "Sprint",
             secs: 3.0,
@@ -150,8 +150,21 @@ mod tests {
                 value: 2.0,
             }],
         });
-        // (1.5 + 2.0) × 1.35 = 4.725
-        assert!((buffs.stat(1.5, StatKind::MoveSpeed) - 4.725).abs() < 1e-5);
+        // 铭文：移速 +1（后置平顶，不吃百分比）
+        buffs.apply(ActiveBuff {
+            name: "Glyph",
+            secs: 3.0,
+            stacks: 1,
+            policy: StackPolicy::Refresh,
+            flags: CCFlags::NONE,
+            effects: vec![StatMod {
+                stat: StatKind::MoveSpeed,
+                op: Op::FlatAdd,
+                value: 1.0,
+            }],
+        });
+        // (1.5 + 2.0) × (1 + 0.35) + 1.0 = 5.725
+        assert!((buffs.stat(1.5, StatKind::MoveSpeed) - 5.725).abs() < 1e-4);
         // 没碰的属性域不受影响
         assert_eq!(buffs.stat(1.0, StatKind::AttackSpeed), 1.0);
         // 空容器 = 基础值
@@ -172,8 +185,8 @@ mod tests {
             flags: CCFlags::NONE,
             effects: vec![StatMod {
                 stat: StatKind::AttackSpeed,
-                op: Op::Mul,
-                value: 1.2,
+                op: Op::Pct,
+                value: 0.2,
             }],
         };
         // Refresh：施三次仍是一层
@@ -183,20 +196,20 @@ mod tests {
         assert_eq!(buffs.list[0].stacks, 1);
         assert!((buffs.stat(1.0, StatKind::AttackSpeed) - 1.2).abs() < 1e-6);
 
-        // Stack(3)：叠三层 = 1.2³
+        // Stack(3)：叠三层 = 1 + 0.2×3 = 1.6（百分比点线性叠加）
         let mut stacked = Buffs::default();
         for _ in 0..5 {
             stacked.apply(mk(StackPolicy::Stack(3)));
         }
         assert_eq!(stacked.list[0].stacks, 3);
-        assert!((stacked.stat(1.0, StatKind::AttackSpeed) - 1.2f32.powi(3)).abs() < 1e-6);
+        assert!((stacked.stat(1.0, StatKind::AttackSpeed) - 1.6).abs() < 1e-6);
 
-        // 独立共存：两个同名独立 buff 叠乘 1.2 × 1.2
+        // 独立共存：两条独立 +20% = 1 + 0.2 + 0.2 = 1.4
         let mut indep = Buffs::default();
         indep.apply(mk(StackPolicy::Independent));
         indep.apply(mk(StackPolicy::Independent));
         assert_eq!(indep.list.len(), 2);
-        assert!((indep.stat(1.0, StatKind::AttackSpeed) - 1.44).abs() < 1e-6);
+        assert!((indep.stat(1.0, StatKind::AttackSpeed) - 1.4).abs() < 1e-6);
     }
 
     /// 端到端：狂暴加速移动，到期后回基础移速、容器组件被移除
@@ -234,13 +247,13 @@ mod tests {
                         effects: vec![
                             StatMod {
                                 stat: StatKind::MoveSpeed,
-                                op: Op::Mul,
-                                value: 2.0,
+                                op: Op::Pct,
+                                value: 1.0,
                             },
                             StatMod {
                                 stat: StatKind::AttackSpeed,
-                                op: Op::Mul,
-                                value: 2.0,
+                                op: Op::Pct,
+                                value: 1.0,
                             },
                         ],
                 }),

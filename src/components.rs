@@ -184,7 +184,8 @@ pub fn cc_channels(cc: CCFlags) -> Channels {
 // 数值类 buff 的统一表达：一个 buff = 属性修饰 + 控制标志位 + 持续时间 + 叠加策略。
 // 消费方（attack/movement/...）不逐 buff 查询，而是
 // buffs.stat(基础值, StatKind) 一次性合成最终值。
-// 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
+// 合成规则（Dota 式三槽）：final = (base + ΣAdd) × (1 + ΣPct) + ΣFlatAdd
+// ——前置平顶吃百分比，百分比线性叠加（不爆炸），后置平顶不吃百分比
 
 /// 受修饰的属性域（加新属性 = 加一个枚举值，缓存数组随 Max 自动扩容）
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -203,24 +204,29 @@ impl StatKind {
     }
 }
 
-/// 每属性域的合成缓存 [ΣAdd, ΠMul]，附加/过期时重算，
-/// 消费方 stat() 读缓存拼基础值：final = (base + add) × mul
+/// 每属性域的合成缓存三个槽位 [add, mul, flat]：
+/// - add：前置平顶和（初始 0）
+/// - mul：乘法槽（初始 1.0，Pct 累加百分比点，线性叠加）
+/// - flat：后置平顶和（初始 0）
+/// 合成公式：final = (base + add) × mul + flat（附加/过期时重算）
 #[derive(Clone, Copy)]
-struct StatFold([[f32; 2]; StatKind::Max as usize]);
+struct StatFold([[f32; 3]; StatKind::Max as usize]);
 
 impl Default for StatFold {
     fn default() -> Self {
-        StatFold([[0.0, 1.0]; StatKind::Max as usize])
+        StatFold([[0.0, 1.0, 0.0]; StatKind::Max as usize])
     }
 }
 
-/// 修饰运算（加法先合成，乘法后合成）
+/// 修饰运算（三种语义槽，Dota 式合成公式）
 #[derive(Clone, Copy)]
 pub enum Op {
-    /// final = base + value
+    /// 前置平顶：先加后乘（吃百分比），如 +2 移速
     Add,
-    /// final = base × value
-    Mul,
+    /// 百分比：乘法槽累加百分比点（线性叠加），+35% 记 0.35
+    Pct,
+    /// 后置平顶：先乘后加（不吃百分比），如固定附伤
+    FlatAdd,
 }
 
 #[derive(Clone, Copy)]
@@ -295,14 +301,13 @@ impl Buffs {
                 let slot = &mut fold.0[e.stat.index()];
                 match e.op {
                     Op::Add => slot[0] += e.value * n as f32,
-                    Op::Mul => {
-                        // 层叠乘法用显式连乘：powi 依赖 libm/compiler-rt 实现，
-                        // 跨平台（Windows/Android）可能在末位不一致——帧同步
-                        // 要求逐比特确定；连乘顺序固定，IEEE 保证全平台一致
-                        for _ in 0..n {
-                            slot[1] *= e.value;
-                        }
+                    Op::Pct => {
+                        // 百分比点线性叠加：mul += val × stack（初始 1.0）。
+                        // 显式乘法不用 powi——libm 跨平台（Windows/Android）
+                        // 可能在末位不一致，帧同步要求逐比特确定
+                        slot[1] += e.value * n as f32;
                     }
+                    Op::FlatAdd => slot[2] += e.value * n as f32,
                 }
             }
         }
@@ -355,10 +360,10 @@ impl Buffs {
         cc_channels(self.cc)
     }
 
-    /// 属性解析：读缓存拼基础值，final = (base + ΣAdd) × ΠMul
+    /// 属性解析：读缓存拼基础值，final = (base + add) × mul + flat
     pub fn stat(&self, base: f32, kind: StatKind) -> f32 {
-        let [add, mul] = self.stats.0[kind.index()];
-        (base + add) * mul
+        let [add, mul, flat] = self.stats.0[kind.index()];
+        (base + add) * mul + flat
     }
 }
 

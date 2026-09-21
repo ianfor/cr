@@ -19,7 +19,7 @@ pub struct TowerSpec {
 /// 模拟版本号：任何影响模拟结果的改动都必须 +1！
 /// 包括：数值调整、AI/寻路逻辑、地图结构、牌库洗牌、帧率。
 /// 录像回放只在本常量与录像文件中的版本一致时才保证结果正确。
-pub const SIM_VERSION: u32 = 4;
+pub const SIM_VERSION: u32 = 5;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）
@@ -138,8 +138,8 @@ const fn m(
 /// 狂暴 buff 规格
 #[derive(Clone, Copy)]
 pub struct RageSpec {
-    /// 攻速/移速倍率
-    pub mult: f32,
+    /// 增速百分比点（0.35 = +35%，攻速/移速线性叠加）
+    pub pct: f32,
     /// 持续秒数
     pub secs: f32,
 }
@@ -246,7 +246,7 @@ pub const CARDS: [CardSpec; 21] = [
     CardSpec { id: 16, name: "Arrows", cost: 3.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 300.0, radius: 2.0, stun_secs: 0.0, rage: None }) },
     CardSpec { id: 17, name: "Fireball", cost: 4.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 550.0, radius: 1.5, stun_secs: 0.0, rage: None }) },
     // 狂暴：己方单位攻速/移速 +35%，持续 6s
-    CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { mult: 1.35, secs: 6.0 }) }) },
+    CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { pct: 0.35, secs: 6.0 }) }) },
     // ===== 建筑（仅己方半场可部署，有寿命）=====
     // 加农炮：仅对地
     CardSpec { id: 19, name: "Cannon", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 1400.0, lifetime_secs: 30.0, attack: Some(BuildingAttack { damage: 90.0, range: 5.0, interval: 0.9, hits_air: false }), spawner: None }) },

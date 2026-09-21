@@ -246,13 +246,13 @@ pub fn play_card(
                             effects: vec![
                                 StatMod {
                                     stat: StatKind::MoveSpeed,
-                                    op: Op::Mul,
-                                    value: r.mult,
+                                    op: Op::Pct,
+                                    value: r.pct,
                                 },
                                 StatMod {
                                     stat: StatKind::AttackSpeed,
-                                    op: Op::Mul,
-                                    value: r.mult,
+                                    op: Op::Pct,
+                                    value: r.pct,
                                 },
                             ],
                         };
