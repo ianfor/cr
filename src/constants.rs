@@ -19,7 +19,9 @@ pub struct TowerSpec {
 /// 模拟版本号：任何影响模拟结果的改动都必须 +1！
 /// 包括：数值调整、AI/寻路逻辑、地图结构、牌库洗牌、帧率。
 /// 录像回放只在本常量与录像文件中的版本一致时才保证结果正确。
-pub const SIM_VERSION: u32 = 5;
+/// v6：AOI 空间网格化（索敌/推挤/溅射邻域查询）——等距平局裁决顺序
+/// 与浮点累加顺序变化，旧录像结果失真
+pub const SIM_VERSION: u32 = 6;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）
@@ -65,6 +67,18 @@ pub const PROJECTILE_RADIUS: f32 = 0.18;
 pub const MAX_STEERING_FORCE: f32 = 4.0;
 /// 空中单位离地高度（纯表现，模拟逻辑只用 xz 平面）
 pub const FLY_HEIGHT: f32 = 1.6;
+
+// AOI 空间网格（combat/grid.rs）
+/// 网格单元边长：≥ 最大接触对距离，常规单位推挤邻域 3×3 起步
+pub const GRID_CELL: f32 = 2.0;
+/// 网格边界：比部署区 [-8,8]×[-14,14] 外扩足够余量，越界位置钳到边缘格
+pub const GRID_MIN_X: f32 = -16.0;
+pub const GRID_MAX_X: f32 = 16.0;
+pub const GRID_MIN_Z: f32 = -24.0;
+pub const GRID_MAX_Z: f32 = 24.0;
+/// 怪物半径上限：网格查询半径的补偿项（range + self_r + 本值定环数上限）。
+/// 加新卡超出此半径会被 grid 模块的测试拦下
+pub const MONSTER_RADIUS_MAX: f32 = 1.5;
 
 /// 冲锋规格
 #[derive(Clone, Copy)]

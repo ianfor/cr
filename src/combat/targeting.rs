@@ -8,13 +8,17 @@
 //!
 //! Guard（塔/建筑卡）：射程内最近敌方怪物，目标出射程即丢锁（原地守卫）
 //!
-//! 本系统还负责构建全场快照（WorldSnaps），供 attacking/moving 复用
+//! 本系统还负责构建全场战场视图（WorldSnaps：快照 + 怪物空间网格 +
+//! entity→下标点查表），供 attacking/moving/溅射复用。
+//! 最近邻：怪走网格（扩环+早退），塔/建筑走线性（≤12 个且不动），
+//! 等距平局怪优先（对齐旧全扫顺序：怪在快照前段）。
 
 use bevy::prelude::*;
 
 use crate::components::*;
+use crate::constants::*;
 
-use super::{can_target, edge_dist, UnitSnap, WorldSnaps};
+use super::{can_target, edge_dist, SpatialGrid, UnitSnap, WorldSnaps};
 
 pub fn targeting(
     mut snaps_res: ResMut<WorldSnaps>,
@@ -32,19 +36,18 @@ pub fn targeting(
     towers: Query<(Entity, &Tower, &Transform)>,
     buildings: Query<(Entity, &BuildingCard, &Transform)>,
 ) {
-    // ===== 全场快照（怪+塔+建筑） =====
-    let mut snaps: Vec<UnitSnap> = monsters
-        .iter()
-        .map(|(e, m, t, f)| UnitSnap {
-            entity: e,
-            faction: m.faction,
-            pos: t.translation,
-            radius: m.radius,
-            is_tower: false,
-            is_building: false,
-            flying: f.is_some(),
-        })
-        .collect();
+    // ===== 全场快照（怪+塔+建筑，顺序两端一致） =====
+    let WorldSnaps { snaps, grid, index } = &mut *snaps_res;
+    snaps.clear();
+    snaps.extend(monsters.iter().map(|(e, m, t, f)| UnitSnap {
+        entity: e,
+        faction: m.faction,
+        pos: t.translation,
+        radius: m.radius,
+        is_tower: false,
+        is_building: false,
+        flying: f.is_some(),
+    }));
     snaps.extend(towers.iter().map(|(e, t, tr)| UnitSnap {
         entity: e,
         faction: t.faction,
@@ -63,6 +66,17 @@ pub fn targeting(
         is_building: true,
         flying: false,
     }));
+
+    // ===== 空间索引：网格只装怪物；entity→下标点查表（只 get 不迭代） =====
+    grid.clear();
+    index.clear();
+    for (i, s) in snaps.iter().enumerate() {
+        if !s.is_building_kind() {
+            grid.insert(s.pos, i as u32);
+        }
+        index.insert(s.entity, i as u32);
+    }
+    let (snaps, grid, index) = (&*snaps, &*grid, &*index);
 
     for (entity, mut attacker, targeting, transform, monster, tower, building, buffs) in
         &mut units
@@ -83,45 +97,34 @@ pub fn targeting(
             .or(building.map(|b| b.radius))
             .expect("攻击实体必为怪/塔/建筑之一");
 
-        let nearest = |filter: &dyn Fn(&UnitSnap) -> bool| {
-            snaps
-                .iter()
-                .filter(|s| s.faction != faction && s.entity != entity)
-                .filter(|s| filter(s))
-                .min_by(|a, b| {
-                    pos.distance_squared(a.pos)
-                        .partial_cmp(&pos.distance_squared(b.pos))
-                        .unwrap()
-                })
-        };
-
         match &targeting.0 {
             // ===== 守卫（塔/建筑卡）：只打怪，出射程丢锁 =====
             TargetPolicy::Guard => {
                 if let Some(e) = attacker.target {
-                    let invalid = match snaps
-                        .iter()
-                        .find(|s| s.entity == e && s.faction != faction)
-                    {
-                        None => true,
-                        Some(s) => {
-                            !can_target(&attacker, false, s)
+                    let invalid = match index.get(&e).map(|&i| &snaps[i as usize]) {
+                        Some(s) if s.faction != faction => {
+                            !can_target(attacker.hits_air, false, s)
                                 || edge_dist(pos, self_radius, s.pos, s.radius)
                                     > attacker.attack_range
                         }
+                        _ => true,
                     };
                     if invalid {
                         attacker.target = None;
                     }
                 }
                 if attacker.target.is_none() {
-                    attacker.target = nearest(&|s| {
-                        !s.is_building_kind()
-                            && can_target(&attacker, false, s)
-                            && edge_dist(pos, self_radius, s.pos, s.radius)
-                                <= attacker.attack_range
-                    })
-                    .map(|s| s.entity);
+                    let found = nearest_monster(
+                        grid,
+                        snaps,
+                        pos,
+                        faction,
+                        entity,
+                        self_radius,
+                        attacker.attack_range,
+                        attacker.hits_air,
+                    );
+                    attacker.target = found.map(|(_, i)| snaps[i as usize].entity);
                 }
             }
             // ===== 怪物：aggro 内最近 + 建筑兜底 + 交战锁定 =====
@@ -134,16 +137,13 @@ pub fn targeting(
                 // 2) 已交战（进过攻击范围）后被挤出攻击范围 = 被打断
                 //    （站桩输出被新放置的怪挤开等）。未交战不因距离解锁。
                 if let Some(e) = attacker.target {
-                    let invalid = match snaps
-                        .iter()
-                        .find(|s| s.entity == e && s.faction != faction)
-                    {
-                        None => true,
-                        Some(s) => {
+                    let invalid = match index.get(&e).map(|&i| &snaps[i as usize]) {
+                        Some(s) if s.faction != faction => {
                             attacker.engaged
                                 && edge_dist(pos, self_radius, s.pos, s.radius)
                                     > attacker.attack_range + 0.05
                         }
+                        _ => true,
                     };
                     if invalid {
                         attacker.target = None;
@@ -152,24 +152,95 @@ pub fn targeting(
                 }
                 // 索敌：未交战每帧重评（交战中锁定不换）
                 if !attacker.engaged {
-                    let in_aggro = nearest(&|s| {
-                        can_target(&attacker, *building_only, s)
-                            && edge_dist(pos, self_radius, s.pos, s.radius) <= *aggro_range
+                    // aggro 内最近（含塔/建筑）。只攻建筑单位：怪物全被
+                    // can_target 拒 → 跳过网格查询，只扫静态
+                    let in_aggro = if *building_only {
+                        nearest_static(snaps, pos, faction, entity, self_radius, *aggro_range)
+                    } else {
+                        merge_nearest(
+                            nearest_monster(
+                                grid,
+                                snaps,
+                                pos,
+                                faction,
+                                entity,
+                                self_radius,
+                                *aggro_range,
+                                attacker.hits_air,
+                            ),
+                            nearest_static(snaps, pos, faction, entity, self_radius, *aggro_range),
+                        )
+                    };
+                    // 建筑兜底：全场最近敌方建筑（无距离限制，行军方向）
+                    let found = in_aggro.or_else(|| {
+                        nearest_static(snaps, pos, faction, entity, self_radius, f32::INFINITY)
                     });
-                    attacker.target = in_aggro
-                        .or_else(|| {
-                            nearest(&|s| {
-                                can_target(&attacker, *building_only, s) && s.is_building_kind()
-                            })
-                        })
-                        .map(|t| t.entity);
+                    attacker.target = found.map(|(_, i)| snaps[i as usize].entity);
                 }
             }
         }
     }
+}
 
-    // 发布本帧快照（attacking/moving 复用）
-    snaps_res.0 = snaps;
+/// 最近怪（网格扩环 + 早退）：filter 内做全部精确判定
+/// （阵营/自身排除 + 对空限制 + edge_dist ≤ range）
+fn nearest_monster(
+    grid: &SpatialGrid,
+    snaps: &[UnitSnap],
+    pos: Vec3,
+    faction: Faction,
+    self_entity: Entity,
+    self_radius: f32,
+    range: f32,
+    hits_air: bool,
+) -> Option<(f32, u32)> {
+    grid.query_nearest(
+        snaps,
+        pos,
+        range + self_radius + MONSTER_RADIUS_MAX,
+        &|s: &UnitSnap| {
+            s.faction != faction
+                && s.entity != self_entity
+                && can_target(hits_air, false, s)
+                && edge_dist(pos, self_radius, s.pos, s.radius) <= range
+        },
+    )
+}
+
+/// 最近静态（塔/建筑线性扫描，保持快照顺序：塔在前建筑在后）
+fn nearest_static(
+    snaps: &[UnitSnap],
+    pos: Vec3,
+    faction: Faction,
+    self_entity: Entity,
+    self_radius: f32,
+    max_edge: f32,
+) -> Option<(f32, u32)> {
+    snaps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            s.is_building_kind()
+                && s.faction != faction
+                && s.entity != self_entity
+                && edge_dist(pos, self_radius, s.pos, s.radius) <= max_edge
+        })
+        .map(|(i, s)| (pos.distance_squared(s.pos), i as u32))
+        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+}
+
+/// 合并怪（网格）与静态（线性）的最近结果：
+/// 等距时怪优先——对齐旧全扫顺序（怪在快照前段，min_by 先见者优先）
+fn merge_nearest(
+    monster: Option<(f32, u32)>,
+    statc: Option<(f32, u32)>,
+) -> Option<(f32, u32)> {
+    match (monster, statc) {
+        (Some(m), None) => Some(m),
+        (None, Some(s)) => Some(s),
+        (Some((dm, im)), Some((ds, is))) => Some(if dm <= ds { (dm, im) } else { (ds, is) }),
+        (None, None) => None,
+    }
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use crate::components::*;
 use crate::constants::*;
 
-use super::{edge_dist, ProjectileAssets, WorldSnaps};
+use super::{edge_dist, ProjectileAssets, UnitSnap, WorldSnaps};
 use super::projectile::projectile_assets;
 
 pub fn attacking(
@@ -41,9 +41,11 @@ pub fn attacking(
         let Some(target_entity) = attacker.target else {
             continue;
         };
-        let Some(target) = snaps.0.iter().find(|s| s.entity == target_entity) else {
+        // 点查表 O(1)（替代旧的 O(n) 线性 find）
+        let Some(&i) = snaps.index.get(&target_entity) else {
             continue; // 目标不在快照中（本帧已被清除）
         };
+        let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
         let faction = monster
             .map(|m| m.faction)
@@ -113,14 +115,14 @@ pub fn attacking(
         }
 
         // 近战溅射：以自身为中心的范围伤害（瓦基丽 360°）
+        // 怪走网格圆域；塔/建筑走线性（旧版溅射同时波及建筑，必须保留）
         if !attacker.ranged && attacker.splash_radius > 0.0 {
-            for s in snaps
-                .0
-                .iter()
-                .filter(|s| s.faction != faction && s.entity != target.entity)
-            {
+            let mut splash = |s: &UnitSnap| {
+                if s.faction == faction || s.entity == target.entity {
+                    return;
+                }
                 if s.flying && !attacker.hits_air {
-                    continue; // 对地溅射打不到空军
+                    return; // 对地溅射打不到空军
                 }
                 let mut d = s.pos - pos;
                 d.y = 0.0;
@@ -129,6 +131,14 @@ pub fn attacking(
                         health.current -= damage;
                     }
                 }
+            };
+            snaps.grid.for_each_in_circle(
+                pos,
+                attacker.splash_radius + MONSTER_RADIUS_MAX,
+                &mut |i| splash(&snaps.snaps[i as usize]),
+            );
+            for s in snaps.snaps.iter().filter(|s| s.is_building_kind()) {
+                splash(s);
             }
         }
     }

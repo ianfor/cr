@@ -15,6 +15,7 @@
 
 mod attack;
 mod buildings;
+mod grid;
 mod movement;
 mod physics;
 mod projectile;
@@ -31,12 +32,15 @@ pub use targeting::targeting;
 
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
+use std::collections::HashMap;
 
 use crate::bot::BotMode;
 use crate::cards::{self, SelectedCard};
 use crate::components::*;
 use crate::constants::*;
 use crate::net::{self, NetClient};
+
+pub(crate) use grid::SpatialGrid;
 
 // ===== 共享快照 =====
 
@@ -59,9 +63,18 @@ impl UnitSnap {
     }
 }
 
-/// 本帧单位快照：targeting 写入，attacking/moving 读取（帧同步链内顺序保证新鲜）
+/// 本帧战场视图：targeting 每帧构建一次，attacking/moving 读取
+/// （帧同步链内顺序保证新鲜）。三件套：
+/// - `snaps`：全场快照（怪→塔→建筑，顺序两端一致）
+/// - `grid`：怪物空间网格（塔/建筑不入格——≤12 个且不动，最近邻走线性）
+/// - `index`：entity → 快照下标。**只做点查（get），禁止迭代**
+///   （HashMap RandomState 每进程随机种子，迭代序不同会失同步）
 #[derive(Resource, Default)]
-pub struct WorldSnaps(pub(crate) Vec<UnitSnap>);
+pub struct WorldSnaps {
+    pub(crate) snaps: Vec<UnitSnap>,
+    pub(crate) grid: SpatialGrid,
+    pub(crate) index: HashMap<Entity, u32>,
+}
 
 /// 水平边缘距离（忽略 y，减去双方半径）
 pub(crate) fn edge_dist(a_pos: Vec3, a_r: f32, b_pos: Vec3, b_r: f32) -> f32 {
@@ -73,8 +86,8 @@ pub(crate) fn edge_dist(a_pos: Vec3, a_r: f32, b_pos: Vec3, b_r: f32) -> f32 {
 /// 攻击者能否把该快照当作目标：
 /// - 不能对空 → 打不了飞行单位
 /// - 只攻建筑 → 只索塔/建筑卡，无视怪物（巨人/野猪）
-pub(crate) fn can_target(attacker: &Attacker, building_only: bool, s: &UnitSnap) -> bool {
-    if s.flying && !attacker.hits_air {
+pub(crate) fn can_target(hits_air: bool, building_only: bool, s: &UnitSnap) -> bool {
+    if s.flying && !hits_air {
         return false;
     }
     if building_only {

@@ -986,6 +986,86 @@ mod tests {
         assert_eq!(n_monsters, 4, "王子 1 + 骷髅 3（箭雨瞬发不出实体）");
     }
 
+    /// AOI 压测（手动跑：cargo test --lib -- --ignored stress --nocapture）
+    /// 300 只不死怪混战 + 推挤 + 攻击，全程满负载跑 600 tick，打印吞吐。
+    /// 同一场景用于空间网格（AOI）改造的前后性能对比。
+    #[test]
+    #[ignore]
+    fn stress_300_units_perf() {
+        let mut w = SimWorld::new();
+        w.reset(0);
+        {
+            let world = w.world_mut();
+            // 塔血拉到不会死：保证全程不死局、单位数恒定（负载稳定可对比）
+            let mut towers = world.query::<&mut Health>();
+            for mut h in towers.iter_mut(world) {
+                h.current = 1e9;
+                h.max = 1e9;
+            }
+            // xorshift32 布点：双方交错混在全场，出生即交战
+            let mut rng = 0x1234_5678u32;
+            let mut next = || {
+                rng ^= rng << 13;
+                rng ^= rng >> 17;
+                rng ^= rng << 5;
+                rng
+            };
+            for i in 0..300 {
+                let faction = if i % 2 == 0 {
+                    Faction::Player
+                } else {
+                    Faction::Enemy
+                };
+                let x = (next() % 1400) as f32 / 100.0 - 7.0;
+                let z = (next() % 2000) as f32 / 100.0 - 10.0;
+                world.spawn((
+                    Monster {
+                        faction,
+                        card: 0,
+                        radius: 0.5,
+                        mass: 1.0,
+                    },
+                    Attacker {
+                        damage: 100.0,
+                        attack_range: 0.75,
+                        interval: 1.0,
+                        cooldown: 1.0,
+                        splash_radius: 0.0,
+                        hits_air: false,
+                        ranged: false,
+                        target: None,
+                        engaged: false,
+                    },
+                    Targeting(TargetPolicy::Seek {
+                        aggro_range: 5.0,
+                        building_only: false,
+                    }),
+                    Mover { speed: 2.0 },
+                    Health {
+                        current: 1e9,
+                        max: 1e9,
+                    },
+                    Transform::from_xyz(x, 1.0, z),
+                ));
+            }
+        }
+        let t0 = std::time::Instant::now();
+        for _ in 0..600 {
+            let _ = w.world_mut().try_run_schedule(SimTick);
+        }
+        let secs = t0.elapsed().as_secs_f32();
+        let alive = {
+            let world = w.world_mut();
+            let mut q = world.query::<&Monster>();
+            q.iter(world).count()
+        };
+        println!(
+            "stress: 600 ticks, {alive} units alive, {secs:.2}s, {:.0} ticks/s",
+            600.0 / secs
+        );
+        assert_eq!(alive, 300, "不死局：单位必须全部存活");
+    }
+
     /// 随机策略自对弈：环境能跑完整局并给出胜负
     #[test]
     fn random_self_play_completes_episode() {

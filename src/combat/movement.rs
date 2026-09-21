@@ -32,9 +32,11 @@ pub fn moving(
         let Some(target_entity) = attacker.target else {
             continue;
         };
-        let Some(target) = snaps.0.iter().find(|s| s.entity == target_entity) else {
+        // 点查表 O(1)（替代旧的 O(n) 线性 find）
+        let Some(&i) = snaps.index.get(&target_entity) else {
             continue;
         };
+        let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
         let edge = edge_dist(pos, m.radius, target.pos, target.radius);
         if edge <= attacker.attack_range + 0.05 {
