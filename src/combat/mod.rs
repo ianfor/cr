@@ -205,13 +205,12 @@ pub fn apply_commands(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
-    mut spell_targets: Query<(
+    mut     spell_targets: Query<(
         Entity,
         &mut Health,
         &Transform,
         Option<&Monster>,
         Option<&BuildingCard>,
-        Option<&mut Stun>,
         Option<&mut Buffs>,
     )>,
 ) {

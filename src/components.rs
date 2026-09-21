@@ -121,19 +121,35 @@ impl Charge {
 #[derive(Component)]
 pub struct Flying;
 
-/// 晕眩（法术插入，status_effects 倒计时后移除）：
-/// 无法索敌/攻击/移动，冲锋清零；目标锁定保留。
-/// 硬控走独立的排除通道（Without<Stun>），不进属性修饰器管线
+/// 晕眩标记：由 status_effects 从 Buffs 的 STUN 标志位同步派生（快查索引）——
+/// 数据源永远是 Buffs，本组件只让 Without<Stun> 过滤保持 archetype 级速度。
+/// 语义：无法索敌/攻击/移动，冲锋清零，目标锁定保留
 #[derive(Component)]
-pub struct Stun {
-    pub secs: f32,
-}
+pub struct Stun;
 
 // ===== 属性修饰器管线 =====
-// 数值类 buff 的统一表达：一个 buff = 一组属性修饰 + 持续时间 + 叠加策略。
+// 数值类 buff 的统一表达：一个 buff = 属性修饰 + 控制标志位 + 持续时间 + 叠加策略。
 // 消费方（attack/movement/...）不逐 buff 查询，而是
 // buffs.stat(基础值, StatKind) 一次性合成最终值。
 // 合成规则：final = (base + ΣAdd) × ΠMul（Stack 策略按层数放大）
+
+/// 控制标志位（晕眩这类"禁用通道"的效果，打包进 buff 数据）
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CCFlags(pub u8);
+
+impl CCFlags {
+    pub const NONE: CCFlags = CCFlags(0);
+    /// 晕眩：禁索敌/攻击/移动，清冲锋
+    pub const STUN: CCFlags = CCFlags(1);
+    // 扩展位：ROOT（定身，只禁移动）/ SILENCE（禁法术位）/ TAUNT ...
+
+    pub fn contains(self, other: CCFlags) -> bool {
+        self.0 & other.0 == other.0
+    }
+    pub fn with(self, other: CCFlags) -> CCFlags {
+        CCFlags(self.0 | other.0)
+    }
+}
 
 /// 受修饰的属性域（加新属性 = 加一个枚举值 + 消费方一行查询）
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -164,13 +180,16 @@ pub struct StatMod {
 pub enum StackPolicy {
     /// 刷新持续时间，数值取新的（狂暴）
     Refresh,
+    /// 取更长的剩余时间（晕眩：新的更久才算数）
+    Longer,
     /// 独立共存：各倒计时各生效，数值叠乘（不同来源的减速）
     Independent,
     /// 最多叠 n 层，每层独立生效（叠层攻速）
     Stack(u8),
 }
 
-/// 一个活跃 buff 实例（如"狂暴"同时改移速+攻速 = 两条 StatMod）
+/// 一个活跃 buff 实例：属性修饰（effects）+ 控制标志（flags）+ 生命周期。
+/// 如"狂暴"= 两条 StatMod；"晕眩"= 一个 STUN 标志位，无属性修饰
 pub struct ActiveBuff {
     /// 同名 = 同种 buff（替换/叠层判定）
     pub name: &'static str,
@@ -179,6 +198,8 @@ pub struct ActiveBuff {
     /// 当前层数（仅 Stack 策略 > 1）
     pub stacks: u8,
     pub policy: StackPolicy,
+    /// 控制标志位（晕眩/将来的定身/沉默）
+    pub flags: CCFlags,
     pub effects: Vec<StatMod>,
 }
 
@@ -187,13 +208,18 @@ pub struct ActiveBuff {
 pub struct Buffs(pub Vec<ActiveBuff>);
 
 impl Buffs {
-    /// 施加 buff：按 name 与策略合并（刷新/叠层）或共存（独立）
+    /// 施加 buff：按 name 与策略合并（刷新/取更久/叠层）或共存（独立）
     pub fn apply(&mut self, incoming: ActiveBuff) {
         if let Some(existing) = self.0.iter_mut().find(|b| b.name == incoming.name) {
             match incoming.policy {
                 StackPolicy::Refresh => {
                     existing.secs = incoming.secs;
                     existing.effects = incoming.effects;
+                }
+                StackPolicy::Longer => {
+                    if incoming.secs > existing.secs {
+                        existing.secs = incoming.secs;
+                    }
                 }
                 StackPolicy::Stack(n) => {
                     existing.stacks = (existing.stacks + 1).min(n);
@@ -205,6 +231,11 @@ impl Buffs {
         } else {
             self.0.push(incoming);
         }
+    }
+
+    /// 是否带有某控制标志（任一活跃 buff）
+    pub fn has_cc(&self, flag: CCFlags) -> bool {
+        self.0.iter().any(|b| b.flags.contains(flag))
     }
 
     /// 属性解析：基础值折叠全部相关修饰，得到最终值

@@ -170,7 +170,6 @@ pub fn play_card(
         &Transform,
         Option<&Monster>,
         Option<&BuildingCard>,
-        Option<&mut Stun>,
         Option<&mut Buffs>,
     )>,
     faction: Faction,
@@ -222,12 +221,9 @@ pub fn play_card(
                 );
             }
         }
-        // 法术：瞬发，直接结算（伤害/晕眩对敌，狂暴对己）
-        // 晕眩走 Stun 组件（硬控通道），狂暴走 Buffs（属性修饰器管线）
+        // 法术：瞬发，直接结算（伤害对敌，狂暴/晕眩晕对己/敌——都打包成 buff）
         CardKind::Spell(spell) => {
-            for (e, mut hp, tr, monster, building, mut stun, mut buffs) in
-                spell_targets.iter_mut()
-            {
+            for (e, mut hp, tr, monster, building, mut buffs) in spell_targets.iter_mut() {
                 let target_faction = match (&monster, &building) {
                     (Some(m), _) => m.faction,
                     (None, Some(b)) => b.faction,
@@ -246,6 +242,7 @@ pub fn play_card(
                             secs: r.secs,
                             stacks: 1,
                             policy: StackPolicy::Refresh,
+                            flags: CCFlags::NONE,
                             effects: vec![
                                 StatMod {
                                     stat: StatKind::MoveSpeed,
@@ -267,17 +264,21 @@ pub fn play_card(
                         }
                     }
                 } else {
-                    // 敌方单位：伤害 + 晕眩（晕眩仅怪物）
+                    // 敌方单位：伤害 + 晕眩 buff（仅怪物；Stun 标记由 status 同步）
                     hp.current -= spell.damage;
                     if spell.stun_secs > 0.0 && monster.is_some() {
-                        match stun.as_mut() {
-                            Some(existing) => {
-                                existing.secs = existing.secs.max(spell.stun_secs)
-                            }
+                        let buff = ActiveBuff {
+                            name: "Stun",
+                            secs: spell.stun_secs,
+                            stacks: 1,
+                            policy: StackPolicy::Longer,
+                            flags: CCFlags::STUN,
+                            effects: vec![],
+                        };
+                        match buffs.as_mut() {
+                            Some(existing) => existing.apply(buff),
                             None => {
-                                commands.entity(e).insert(Stun {
-                                    secs: spell.stun_secs,
-                                });
+                                commands.entity(e).insert(Buffs(vec![buff]));
                             }
                         }
                     }
@@ -780,9 +781,13 @@ mod tests {
         // 扣 2 费 + 牌循环
         assert_eq!(world.resource::<Elixir>().player, ELIXIR_START - 2.0);
         assert_eq!(world.resource::<Decks>().player[DECK_SIZE - 1], 15);
-        // 敌怪：掉血 + 被晕（Stun 组件插入，Commands 已在系统边界应用）
+        // 敌怪：掉血 + 被晕（晕眩晕打包进 Buffs，Stun 标记由 status_effects 同步）
         assert_eq!(world.get::<Health>(victim).unwrap().current, 2000.0 - 160.0);
-        assert_eq!(world.get::<Stun>(victim).unwrap().secs, 0.5);
+        let buffs = world.get::<Buffs>(victim).unwrap();
+        assert!(buffs.has_cc(CCFlags::STUN), "电击必须附带晕眩标志位");
+        assert_eq!(buffs.0[0].secs, 0.5);
+        assert!(matches!(buffs.0[0].policy, StackPolicy::Longer));
+        drop(buffs);
         // 塔：不吃法术
         assert_eq!(world.get::<Health>(tower).unwrap().current, 6000.0);
         // 范围外：无伤

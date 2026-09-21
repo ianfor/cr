@@ -1,9 +1,11 @@
-//! 状态效果计时：Stun（硬控排除通道）与 Buffs（属性修饰器管线）的生命周期。
+//! 状态效果：Buffs（属性修饰 + 控制标志）的统一生命周期。
 //!
-//! - Stun：倒计时归零移除；持有期间单位无法索敌/攻击/移动
-//!   （各系统以 Without<Stun> 过滤），冲锋蓄力被清零，目标锁定保留
-//! - Buffs：容器内逐条倒计时、过期移除、清空后删组件；
-//!   数值生效由消费方 Buffs::stat() 查询（见 attack/movement）
+//! 数据源唯一：Buffs 容器（时长/叠加/标志位都在里面）。
+//! 本系统每帧做三件事：
+//! 1. 倒计时、过期移除、清空删容器
+//! 2. 同步派生标记：任一活跃 buff 带 STUN 位 → 挂 Stun 标记组件
+//!    （让索敌/攻击/移动的 Without<Stun> 过滤保持 archetype 级快查）
+//! 3. 晕眩期间清冲锋蓄力
 
 use bevy::prelude::*;
 
@@ -12,26 +14,28 @@ use crate::constants::*;
 
 pub fn status_effects(
     mut commands: Commands,
-    mut stuns: Query<(Entity, &mut Stun, Option<&mut Charge>)>,
-    mut buffed: Query<(Entity, &mut Buffs)>,
+    mut buffed: Query<(Entity, &mut Buffs, Option<&mut Charge>)>,
 ) {
-    for (e, mut s, charge) in &mut stuns {
-        s.secs -= TICK_DT;
-        // 晕眩打断冲锋蓄力
-        if let Some(mut c) = charge {
-            c.progress = 0.0;
-        }
-        if s.secs <= 0.0 {
-            commands.entity(e).remove::<Stun>();
-        }
-    }
-    for (e, mut buffs) in &mut buffed {
+    for (e, mut buffs, mut charge) in &mut buffed {
+        // 1) 倒计时 + 过期
         for b in buffs.0.iter_mut() {
             b.secs -= TICK_DT;
         }
         buffs.0.retain(|b| b.secs > 0.0);
+
+        // 2) 晕眩：清冲锋蓄力 + 同步派生标记
+        let stunned = buffs.has_cc(CCFlags::STUN);
+        if stunned {
+            if let Some(c) = charge.as_mut() {
+                c.progress = 0.0;
+            }
+            commands.entity(e).insert(Stun);
+        } else {
+            commands.entity(e).remove::<Stun>();
+        }
+
+        // 3) 没有 buff 就删容器：消费方的 Option<&Buffs> 回到 None
         if buffs.0.is_empty() {
-            // 没有 buff 就删容器：消费方的 Option<&Buffs> 回到 None
             commands.entity(e).remove::<Buffs>();
         }
     }
@@ -42,7 +46,19 @@ mod tests {
     use super::super::{moving, seek, targeting, test_attacker, test_monster, WorldSnaps};
     use super::*;
 
-    /// 晕眩：完全无法行动（位置不动），晕完恢复移动
+    fn stun_buff(secs: f32) -> ActiveBuff {
+        ActiveBuff {
+            name: "Stun",
+            secs,
+            stacks: 1,
+            policy: StackPolicy::Longer,
+            flags: CCFlags::STUN,
+            effects: vec![],
+        }
+    }
+
+    /// 晕眩：完全无法行动（位置不动），晕完恢复移动；
+    /// Stun 标记与 Buffs 数据同步（出现/消失）
     #[test]
     fn stun_freezes_monster() {
         let mut app = App::new();
@@ -68,7 +84,7 @@ mod tests {
                 test_attacker(),
                 seek(5.0),
                 Mover { speed: 1.5 },
-                Stun { secs: 1.0 },
+                Buffs(vec![stun_buff(1.0)]),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, -5.0),
             ))
@@ -76,7 +92,10 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((status_effects, targeting, moving).chain());
-        for _ in 0..29 {
+        schedule.run(world);
+        // 晕眩期间：标记已同步、位置不动
+        assert!(world.get::<Stun>(e).is_some(), "晕眩 buff 应同步出 Stun 标记");
+        for _ in 0..28 {
             schedule.run(world); // 29 tick < 1.0s 晕眩
         }
         assert_eq!(
@@ -85,7 +104,7 @@ mod tests {
             "晕眩期间不得移动"
         );
         for _ in 0..10 {
-            schedule.run(world); // 晕眩结束（组件被移除）
+            schedule.run(world); // 晕眩结束
         }
         assert!(
             world.get::<Transform>(e).unwrap().translation.z > -5.0,
@@ -93,8 +112,23 @@ mod tests {
         );
         assert!(
             world.get::<Stun>(e).is_none(),
-            "晕眩到期后 Stun 组件应被移除"
+            "晕眩到期后 Stun 标记应随 Buffs 移除"
         );
+        assert!(
+            world.get::<Buffs>(e).is_none(),
+            "晕眩到期后 Buffs 容器应被移除"
+        );
+    }
+
+    /// 晕眩叠加策略 Longer：重复施加取更久，短的不缩短长晕
+    #[test]
+    fn stun_reapply_takes_longer() {
+        let mut buffs = Buffs(vec![stun_buff(2.0)]);
+        buffs.apply(stun_buff(0.5)); // 更短：不生效
+        assert_eq!(buffs.0[0].secs, 2.0);
+        buffs.apply(stun_buff(3.0)); // 更长：取 3.0
+        assert_eq!(buffs.0[0].secs, 3.0);
+        assert_eq!(buffs.0.len(), 1, "同名晕眩不叠条目");
     }
 
     /// 属性修饰器管线：合成规则（Add 先加、Mul 后乘、Stack 按层数幂）
@@ -107,6 +141,7 @@ mod tests {
             secs: 6.0,
             stacks: 1,
             policy: StackPolicy::Refresh,
+            flags: CCFlags::NONE,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
                 op: Op::Mul,
@@ -119,6 +154,7 @@ mod tests {
             secs: 3.0,
             stacks: 1,
             policy: StackPolicy::Refresh,
+            flags: CCFlags::NONE,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
                 op: Op::Add,
@@ -142,6 +178,7 @@ mod tests {
             secs: 2.0,
             stacks: 1,
             policy,
+            flags: CCFlags::NONE,
             effects: vec![StatMod {
                 stat: StatKind::AttackSpeed,
                 op: Op::Mul,
@@ -202,6 +239,7 @@ mod tests {
                     secs: 0.5,
                     stacks: 1,
                     policy: StackPolicy::Refresh,
+                    flags: CCFlags::NONE,
                     effects: vec![
                         StatMod {
                             stat: StatKind::MoveSpeed,
