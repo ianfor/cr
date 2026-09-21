@@ -293,6 +293,7 @@ mod tests {
             .init_resource::<ReplayLog>()
             .init_resource::<ReplayControl>()
             .init_resource::<combat::ProjectileAssets>()
+            .init_resource::<combat::WorldSnaps>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .add_systems(
@@ -310,12 +311,15 @@ mod tests {
                     combat::collect_inputs,
                     combat::apply_commands,
                     cards::process_deploying,
-                    combat::building_ai,
-                    combat::monster_ai,
-                    combat::tower_ai,
+                    combat::status_effects,
+                    combat::targeting,
+                    combat::attacking,
+                    combat::moving,
+                    combat::building_lifetime,
+                    combat::building_spawner,
                     combat::move_projectiles,
                     combat::separate_monsters,
-                    combat::separate_from_towers,
+                    combat::separate_from_statics,
                     combat::keep_out_of_river,
                     combat::despawn_dead,
                     match_flow::tick_timer,

@@ -36,49 +36,72 @@ pub fn faction_color(faction: Faction) -> Color {
     }
 }
 
+/// 场上单位（怪/塔/建筑卡的统一标记）：阵营 + 卡种 + 物理尺寸。
+/// 战斗机制拆在能力组件上（Attacker/Targeting/Mover/...），
+/// 挂什么组件就有什么能力——加新机制 = 加新组件，不改现有类型
 #[derive(Component)]
 pub struct Monster {
     pub faction: Faction,
     /// 卡牌 id（CARDS 中的索引）：观测用单位类型标识，不参与模拟逻辑
     pub card: u8,
-    // 以下属性由卡牌规格决定
-    pub damage: f32,
-    /// 攻击范围（边缘距离）
-    pub attack_range: f32,
-    /// 索敌范围（边缘距离）
-    pub aggro_range: f32,
-    pub speed: f32,
+    /// 碰撞半径（索敌边缘距离/推挤/静态阻挡共用）
     pub radius: f32,
     /// 质量：推挤时按质量分配力，大质量推开小质量
     pub mass: f32,
-    pub ranged: bool,
+}
+
+// ===== 战斗能力组件（怪/塔/建筑按需挂载） =====
+
+/// 攻击能力：伤害/射程/攻速/溅射/对空 + 运行时目标与冷却。
+/// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用同一套开火逻辑
+#[derive(Component)]
+pub struct Attacker {
+    pub damage: f32,
+    /// 攻击范围（边缘距离）
+    pub attack_range: f32,
+    /// 攻击间隔（秒）
+    pub interval: f32,
+    /// 攻击冷却（秒，倒计数；仅在目标进入射程后流逝）
+    pub cooldown: f32,
     /// 溅射半径（0 = 单体）
     pub splash_radius: f32,
     /// 能否攻击空中单位
     pub hits_air: bool,
-    /// 飞行单位：无视河道/地面推挤/塔碰撞
-    pub flying: bool,
-    /// 只攻击建筑（塔/建筑卡），索敌无视怪物
-    pub building_only: bool,
-    /// 锁定的攻击目标：不切换，直到目标消失（死亡）或被打断
+    /// 远程（发射追踪子弹）还是近战（直接扣血）
+    pub ranged: bool,
+    /// 锁定的攻击目标
     pub target: Option<Entity>,
     /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
-    /// 未交战（走向远目标途中）不因距离解锁——否则每帧重新索敌，
-    /// 任何进入 aggro 的怪都会抢走目标（历史 bug：塔的优先级低于怪物）
+    /// 交战中锁定不换目标（防距离抖动 flip-flop，对齐 CR）
     pub engaged: bool,
-    /// 冲锋状态（王子）：progress 蓄满 windup 进入冲锋（移速×），
-    /// 攻击命中清零、被晕眩清零；受击不清零
-    pub charge: Option<ChargeState>,
-    /// 晕眩剩余秒数：无法移动/攻击，冲锋清零（电击等打断效果）
-    pub stun_secs: f32,
-    /// 狂暴剩余秒数：攻速/移速 ×rage_mult
-    pub rage_secs: f32,
-    pub rage_mult: f32,
 }
 
-/// 冲锋运行时状态
-#[derive(Clone, Copy, Debug)]
-pub struct ChargeState {
+/// 索敌策略：怪物主动寻敌（含建筑兜底），塔/建筑原地守卫
+#[derive(Component)]
+pub struct Targeting(pub TargetPolicy);
+
+pub enum TargetPolicy {
+    /// 怪物：aggro 内最近目标（塔/怪/建筑一视同仁）；交战锁定；
+    /// 未交战每帧重评；aggro 内无目标 → 全场最近敌方建筑为行军方向。
+    /// building_only = 只攻建筑（巨人/野猪，索敌无视怪物）
+    Seek {
+        aggro_range: f32,
+        building_only: bool,
+    },
+    /// 塔/建筑卡：射程内最近敌方怪物，目标出射程即丢锁（原地不动）
+    Guard,
+}
+
+/// 移动能力（塔/建筑没有）：朝目标移动，过河走桥
+#[derive(Component)]
+pub struct Mover {
+    pub speed: f32,
+}
+
+/// 冲锋（王子）：持续移动蓄力，蓄满移速×speed_mult、首击伤害×damage_mult；
+/// 命中或被晕清零，受击不清零
+#[derive(Component)]
+pub struct Charge {
     /// 已持续移动的秒数
     pub progress: f32,
     /// 蓄力阈值（秒）
@@ -87,56 +110,61 @@ pub struct ChargeState {
     pub damage_mult: f32,
 }
 
-impl ChargeState {
+impl Charge {
     /// 是否已蓄满进入冲锋
     pub fn charged(&self) -> bool {
         self.progress >= self.windup
     }
 }
 
-/// 建筑卡的攻击属性（运行时副本）
-#[derive(Clone, Copy)]
-pub struct BuildingAttackState {
-    pub damage: f32,
-    pub range: f32,
-    pub interval: f32,
-    pub hits_air: bool,
-    /// 攻击计时（秒，倒计数）
-    pub cooldown: f32,
-    pub target: Option<Entity>,
+/// 飞行单位：无视河道/地面推挤/静态阻挡，直线飞向目标；仅被 hits_air 攻击命中
+#[derive(Component)]
+pub struct Flying;
+
+/// 晕眩（法术插入，status_effects 倒计时后移除）：
+/// 无法索敌/攻击/移动，冲锋清零；目标锁定保留
+#[derive(Component)]
+pub struct Stun {
+    pub secs: f32,
 }
 
-/// 出兵建筑运行时状态
-#[derive(Clone, Copy)]
-pub struct BuildingSpawnerState {
-    pub interval_secs: f32,
+/// 狂暴（法术插入）：攻速/移速 ×mult，持续 secs
+#[derive(Component)]
+pub struct Rage {
+    pub secs: f32,
+    pub mult: f32,
+}
+
+/// 建筑寿命：归零自毁（不返圣水）
+#[derive(Component)]
+pub struct Lifetime {
+    pub secs: f32,
+}
+
+/// 出兵建筑（墓碑）：每 interval 秒在自身位置出一只 card_id 对应的小兵
+#[derive(Component)]
+pub struct Spawner {
+    pub interval: f32,
     pub card_id: u8,
     /// 出兵倒计时（秒）
     pub cooldown: f32,
 }
 
-/// 建筑卡实体（加农炮/墓碑）：部署于己方半场，有寿命，速度为 0。
-/// 可被怪物/只攻建筑单位当作目标（与塔同属"建筑"类）
+/// 建筑卡实体（加农炮/墓碑）：部署于己方半场，速度为 0。
+/// 可被怪物/只攻建筑单位当作目标（与塔同属"建筑"类）；
+/// 攻击/出兵/寿命分别由 Attacker/Spawner/Lifetime 能力组件表达
 #[derive(Component)]
 pub struct BuildingCard {
     pub faction: Faction,
     /// 对应卡 id（观测网格/出兵用）
     pub card: u8,
     pub radius: f32,
-    /// 剩余寿命（秒）：归零自毁
-    pub lifetime: f32,
-    pub attack: Option<BuildingAttackState>,
-    pub spawner: Option<BuildingSpawnerState>,
 }
 
 #[derive(Component)]
 pub struct Tower {
     pub faction: Faction,
     pub radius: f32,
-    /// 索敌/攻击范围（按边缘距离算）
-    pub attack_range: f32,
-    /// 锁定的攻击目标：不切换，除非目标死亡或跑出攻击范围
-    pub target: Option<Entity>,
 }
 
 /// 国王塔标记（被摧毁即输掉对局）
@@ -162,10 +190,6 @@ pub struct Deploying {
     pub faction: Faction,
     pub ticks_left: u32,
 }
-
-/// 攻击计时器（攻击间隔）
-#[derive(Component)]
-pub struct AttackTimer(pub Timer);
 
 /// 国王塔/远程单位发射的子弹（追踪目标的小球）
 #[derive(Component)]

@@ -19,7 +19,7 @@ pub struct TowerSpec {
 /// 模拟版本号：任何影响模拟结果的改动都必须 +1！
 /// 包括：数值调整、AI/寻路逻辑、地图结构、牌库洗牌、帧率。
 /// 录像回放只在本常量与录像文件中的版本一致时才保证结果正确。
-pub const SIM_VERSION: u32 = 3;
+pub const SIM_VERSION: u32 = 4;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）

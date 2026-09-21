@@ -3,7 +3,9 @@
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
-use crate::components::{faction_color, AttackTimer, Faction, Health, KingTower, Tower};
+use crate::components::{
+    faction_color, Attacker, Faction, Health, KingTower, Targeting, TargetPolicy, Tower,
+};
 use crate::constants::*;
 use crate::health_bar;
 use crate::net::NetClient;
@@ -183,11 +185,21 @@ fn spawn_tower(
         Tower {
             faction,
             radius: spec.body_radius,
-            attack_range: spec.attack_range,
-            target: None,
         },
+        // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统
+        Attacker {
+            damage: TOWER_ATTACK_DAMAGE,
+            attack_range: spec.attack_range,
+            interval: ATTACK_INTERVAL,
+            cooldown: ATTACK_INTERVAL,
+            splash_radius: 0.0,
+            hits_air: true,
+            ranged: true,
+            target: None,
+            engaged: false,
+        },
+        Targeting(TargetPolicy::Guard),
         Health::new(spec.hp),
-        AttackTimer(Timer::from_seconds(ATTACK_INTERVAL, TimerMode::Repeating)),
         Transform::from_translation(position),
     ));
     if spec.is_king {

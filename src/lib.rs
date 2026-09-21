@@ -122,6 +122,8 @@ pub fn run_app() {
     .init_resource::<ReplayLog>()
     .init_resource::<ReplayControl>()
     .init_resource::<combat::ProjectileAssets>()
+    // 全场单位快照：targeting 每帧写入，attacking/moving 读取
+    .init_resource::<combat::WorldSnaps>()
     // 帧同步：固定 30Hz 模拟帧率
     .insert_resource(Time::<Fixed>::from_hz(TICKS_PER_SEC))
     .add_systems(
@@ -152,12 +154,15 @@ pub fn run_app() {
             combat::collect_inputs,
             combat::apply_commands,
             cards::process_deploying,
-            combat::building_ai,
-            combat::monster_ai,
-            combat::tower_ai,
+            combat::status_effects,
+            combat::targeting,
+            combat::attacking,
+            combat::moving,
+            combat::building_lifetime,
+            combat::building_spawner,
             combat::move_projectiles,
             combat::separate_monsters,
-            combat::separate_from_towers,
+            combat::separate_from_statics,
             combat::keep_out_of_river,
             combat::despawn_dead,
             match_flow::tick_timer,

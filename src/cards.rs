@@ -165,10 +165,13 @@ pub fn play_card(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     spell_targets: &mut Query<(
+        Entity,
         &mut Health,
         &Transform,
-        Option<&mut Monster>,
+        Option<&Monster>,
         Option<&BuildingCard>,
+        Option<&mut Stun>,
+        Option<&mut Rage>,
     )>,
     faction: Faction,
     card_id: u8,
@@ -220,8 +223,11 @@ pub fn play_card(
             }
         }
         // 法术：瞬发，直接结算（伤害/晕眩对敌，狂暴对己）
+        // 晕眩/狂暴以 Stun/Rage 组件表达，status_effects 系统管理其生命周期
         CardKind::Spell(spell) => {
-            for (mut hp, tr, monster, building) in spell_targets.iter_mut() {
+            for (e, mut hp, tr, monster, building, mut stun, mut rage) in
+                spell_targets.iter_mut()
+            {
                 let target_faction = match (&monster, &building) {
                     (Some(m), _) => m.faction,
                     (None, Some(b)) => b.faction,
@@ -234,16 +240,33 @@ pub fn play_card(
                 }
                 if target_faction == faction {
                     // 己方单位：狂暴（仅怪物）
-                    if let (Some(rage), Some(mut m)) = (&spell.rage, monster) {
-                        m.rage_secs = rage.secs;
-                        m.rage_mult = rage.mult;
+                    if let (Some(r), Some(_)) = (&spell.rage, monster) {
+                        match rage.as_mut() {
+                            Some(existing) => {
+                                existing.secs = r.secs;
+                                existing.mult = r.mult;
+                            }
+                            None => {
+                                commands.entity(e).insert(Rage {
+                                    secs: r.secs,
+                                    mult: r.mult,
+                                });
+                            }
+                        }
                     }
                 } else {
                     // 敌方单位：伤害 + 晕眩（晕眩仅怪物）
                     hp.current -= spell.damage;
-                    if let Some(mut m) = monster {
-                        if spell.stun_secs > 0.0 {
-                            m.stun_secs = m.stun_secs.max(spell.stun_secs);
+                    if spell.stun_secs > 0.0 && monster.is_some() {
+                        match stun.as_mut() {
+                            Some(existing) => {
+                                existing.secs = existing.secs.max(spell.stun_secs)
+                            }
+                            None => {
+                                commands.entity(e).insert(Stun {
+                                    secs: spell.stun_secs,
+                                });
+                            }
                         }
                     }
                 }
@@ -329,7 +352,8 @@ pub fn process_deploying(
     }
 }
 
-/// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）
+/// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）。
+/// 机制全部由能力组件表达：Attacker/Targeting/Mover 必备，Charge/Flying 按卡挂
 pub fn spawn_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -347,35 +371,43 @@ pub fn spawn_unit(
         Monster {
             faction,
             card,
-            damage: spec.damage,
-            attack_range: spec.attack_range,
-            aggro_range: spec.aggro_range,
-            speed: spec.speed,
             radius: r,
             mass: spec.mass,
-            ranged: spec.ranged,
+        },
+        Attacker {
+            damage: spec.damage,
+            attack_range: spec.attack_range,
+            interval: spec.attack_interval,
+            cooldown: spec.attack_interval,
             splash_radius: spec.splash_radius,
             hits_air: spec.hits_air,
-            flying: spec.flying,
-            building_only: spec.building_only,
-            engaged: false,
+            ranged: spec.ranged,
             target: None,
-            charge: spec.charge.map(|c| ChargeState {
-                progress: 0.0,
-                windup: c.windup_secs,
-                speed_mult: c.speed_mult,
-                damage_mult: c.damage_mult,
-            }),
-            stun_secs: 0.0,
-            rage_secs: 0.0,
-            rage_mult: 1.0,
+            engaged: false,
         },
+        Targeting(TargetPolicy::Seek {
+            aggro_range: spec.aggro_range,
+            building_only: spec.building_only,
+        }),
+        Mover { speed: spec.speed },
         Health::new(spec.hp),
-        AttackTimer(Timer::from_seconds(spec.attack_interval, TimerMode::Repeating)),
         Mesh3d(meshes.add(Capsule3d::new(r, 2.0 * r))),
         MeshMaterial3d(materials.add(unit_color(faction, spec))),
         Transform::from_translation(pos + Vec3::Y * (2.0 * r + lift)),
     ));
+    // 冲锋（王子）
+    if let Some(c) = &spec.charge {
+        e.insert(Charge {
+            progress: 0.0,
+            windup: c.windup_secs,
+            speed_mult: c.speed_mult,
+            damage_mult: c.damage_mult,
+        });
+    }
+    // 飞行
+    if spec.flying {
+        e.insert(Flying);
+    }
     health_bar::spawn(
         &mut e,
         meshes,
@@ -389,7 +421,8 @@ pub fn spawn_unit(
 /// 建筑卡实体的碰撞半径（加农炮/墓碑共用小方块）
 pub const BUILDING_RADIUS: f32 = 0.6;
 
-/// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，攻击/出兵由 building_ai 驱动）
+/// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，
+/// 攻击/出兵/寿命分别由 Attacker/Spawner/Lifetime 能力组件表达）
 fn spawn_building(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -405,26 +438,38 @@ fn spawn_building(
             faction,
             card,
             radius: r,
-            lifetime: spec.lifetime_secs,
-            attack: spec.attack.map(|a| BuildingAttackState {
-                damage: a.damage,
-                range: a.range,
-                interval: a.interval,
-                hits_air: a.hits_air,
-                cooldown: 0.0,
-                target: None,
-            }),
-            spawner: spec.spawner.map(|s| BuildingSpawnerState {
-                interval_secs: s.interval_secs,
-                card_id: s.card_id,
-                cooldown: s.interval_secs,
-            }),
         },
+        Lifetime {
+            secs: spec.lifetime_secs,
+        },
+        Targeting(TargetPolicy::Guard),
         Health::new(spec.hp),
         Mesh3d(meshes.add(Cuboid::new(2.0 * r, 1.4, 2.0 * r))),
         MeshMaterial3d(materials.add(faction_color(faction).darker(0.15))),
         Transform::from_translation(pos + Vec3::Y * 0.7),
     ));
+    // 加农炮类攻击能力（冷却从 0 起：有敌即开火，之后按间隔）
+    if let Some(a) = &spec.attack {
+        e.insert(Attacker {
+            damage: a.damage,
+            attack_range: a.range,
+            interval: a.interval,
+            cooldown: 0.0,
+            splash_radius: 0.0,
+            hits_air: a.hits_air,
+            ranged: true,
+            target: None,
+            engaged: false,
+        });
+    }
+    // 墓碑类出兵能力（冷却从间隔起：落地 interval 秒后出第一只）
+    if let Some(s) = &spec.spawner {
+        e.insert(Spawner {
+            interval: s.interval_secs,
+            card_id: s.card_id,
+            cooldown: s.interval_secs,
+        });
+    }
     health_bar::spawn(&mut e, meshes, materials, 1.4, 1.9, faction_color(faction));
 }
 
@@ -618,10 +663,14 @@ mod tests {
         for _ in 0..spec.deploy_ticks {
             schedule.run(world);
         }
-        let mut monsters = world.query::<&Monster>();
-        let spawned: Vec<&Monster> = monsters.iter(world).collect();
+        let mut monsters = world.query::<(Entity, &Monster)>();
+        let spawned: Vec<Entity> = monsters.iter(world).map(|(e, _m)| e).collect();
         assert_eq!(spawned.len(), spec.count as usize);
-        assert_eq!(spawned[0].damage, ms.damage);
+        let attacker = world.get::<Attacker>(spawned[0]).unwrap();
+        assert_eq!(attacker.damage, ms.damage);
+        assert_eq!(attacker.interval, ms.attack_interval);
+        assert!(world.get::<Targeting>(spawned[0]).is_some());
+        assert!(world.get::<Mover>(spawned[0]).is_some());
     }
 
     /// 牌池：21 选 8、同种子双方同池不同序、卡种不重复
@@ -671,23 +720,8 @@ mod tests {
                 Monster {
                     faction: Faction::Enemy,
                     card: 0,
-                    damage: 100.0,
-                    attack_range: 0.75,
-                    aggro_range: 5.0,
-                    speed: 1.5,
                     radius: 0.5,
                     mass: 1.0,
-                    ranged: false,
-                    splash_radius: 0.0,
-                    hits_air: false,
-                    flying: false,
-                    building_only: false,
-                    engaged: false,
-                    target: None,
-                    charge: None,
-                    stun_secs: 0.0,
-                    rage_secs: 0.0,
-                    rage_mult: 1.0,
                 },
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 5.0),
@@ -699,8 +733,6 @@ mod tests {
                 Tower {
                     faction: Faction::Enemy,
                     radius: 1.0,
-                    attack_range: 8.0,
-                    target: None,
                 },
                 Health::new(6000.0),
                 Transform::from_xyz(1.0, 0.0, 5.0),
@@ -712,23 +744,8 @@ mod tests {
                 Monster {
                     faction: Faction::Player,
                     card: 0,
-                    damage: 100.0,
-                    attack_range: 0.75,
-                    aggro_range: 5.0,
-                    speed: 1.5,
                     radius: 0.5,
                     mass: 1.0,
-                    ranged: false,
-                    splash_radius: 0.0,
-                    hits_air: false,
-                    flying: false,
-                    building_only: false,
-                    engaged: false,
-                    target: None,
-                    charge: None,
-                    stun_secs: 0.0,
-                    rage_secs: 0.0,
-                    rage_mult: 1.0,
                 },
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 0.0),
@@ -751,9 +768,9 @@ mod tests {
         // 扣 2 费 + 牌循环
         assert_eq!(world.resource::<Elixir>().player, ELIXIR_START - 2.0);
         assert_eq!(world.resource::<Decks>().player[DECK_SIZE - 1], 15);
-        // 敌怪：掉血 + 被晕
+        // 敌怪：掉血 + 被晕（Stun 组件插入，Commands 已在系统边界应用）
         assert_eq!(world.get::<Health>(victim).unwrap().current, 2000.0 - 160.0);
-        assert_eq!(world.get::<Monster>(victim).unwrap().stun_secs, 0.5);
+        assert_eq!(world.get::<Stun>(victim).unwrap().secs, 0.5);
         // 塔：不吃法术
         assert_eq!(world.get::<Health>(tower).unwrap().current, 6000.0);
         // 范围外：无伤
@@ -881,8 +898,6 @@ mod zone_tests {
             Tower {
                 faction: Faction::Enemy,
                 radius: 1.0,
-                attack_range: 8.0,
-                target: None,
             },
             Health::new(6000.0),
             Transform::from_xyz(-6.5, 0.0, 8.5),
