@@ -44,12 +44,14 @@ pub(crate) use grid::SpatialGrid;
 
 // ===== 共享快照 =====
 
-/// 可被攻击单位的快照（索敌/攻击/移动共用），避免嵌套查询与读写冲突
+/// 可被攻击单位的快照（索敌/攻击/移动/推挤共用），避免嵌套查询与读写冲突
 pub(crate) struct UnitSnap {
     pub entity: Entity,
     pub faction: Faction,
     pub pos: Vec3,
     pub radius: f32,
+    /// 质量（推挤力分配用；塔/建筑不参与推挤，填 0）
+    pub mass: f32,
     pub is_tower: bool,
     /// 建筑卡（与塔同属"建筑"类目标，只攻建筑单位的索敌目标）
     pub is_building: bool,

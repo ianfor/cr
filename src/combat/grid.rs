@@ -170,6 +170,7 @@ mod tests {
             faction,
             pos,
             radius: 0.5,
+            mass: 1.0,
             is_tower: false,
             is_building: false,
             flying,

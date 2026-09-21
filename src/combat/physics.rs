@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 
-use super::SpatialGrid;
+use super::WorldSnaps;
 use crate::components::*;
 use crate::constants::*;
 
@@ -12,57 +12,56 @@ use crate::constants::*;
 /// - 力按质量分配：大质量怪物推开小质量怪物（轻的吃更多力）
 /// - 总力钳制 MAX_STEERING_FORCE，以速度形式施加（不再硬改位置，防闪现）
 /// - 飞行单位不参与地面推挤（也不互相推挤）
-/// - 邻域查询走空间网格（圆域覆盖 + 精确距离判定，j > i 每对一次）；
-///   旧版 O(n²) 全对扫描在几百单位时是热点
+/// - 全程消费帧首快照（WorldSnaps）：配对用快照坐标互比——桶与坐标同源，
+///   无过期无 padding；施力一遍统一写回，不碰查询
+/// - 语义：本帧移动新产生的重叠下一帧才被解开（一帧 33ms 延迟）；
+///   帧中出生的单位（墓碑骷髅）下一帧起参与推挤
 pub fn separate_monsters(
-    mut grid: Local<SpatialGrid>,
-    mut monsters: Query<(&Monster, Option<&Flying>, &mut Transform)>,
-) {
-    // 快照 (pos, radius, mass)：只收地面单位
-    let snaps: Vec<(Vec3, f32, f32)> = monsters
-        .iter()
-        .filter(|(_, f, _)| f.is_none())
-        .map(|(m, _, t)| (t.translation, m.radius, m.mass))
-        .collect();
-    let mut forces: Vec<Vec3> = vec![Vec3::ZERO; snaps.len()];
-
-    // 网格每帧重建（clear 复用容量，Local 持有避免每帧重分配）
-    grid.clear();
-    for (i, s) in snaps.iter().enumerate() {
-        grid.insert(s.0, i as u32);
-    }
-    for i in 0..snaps.len() {
-        let (pos_i, r_i, _) = snaps[i];
+    snaps: Res<WorldSnaps>,
+    mut monsters: Query<(Entity, Option<&Flying>, &mut Transform), With<Monster>>,
+) {    // 力累积：与快照下标平行
+    let mut forces = vec![Vec3::ZERO; snaps.snaps.len()];
+    // 配对：快照坐标互比（网格桶同样建自这份坐标）
+    for i in 0..snaps.snaps.len() {
+        let s_i = &snaps.snaps[i];
+        if s_i.is_building_kind() || s_i.flying {
+            continue; // 只推地面怪
+        }
         // 邻域半径 = r_i + MONSTER_RADIUS_MAX：覆盖一切可能接触的对
-        grid.for_each_in_circle(pos_i, r_i + MONSTER_RADIUS_MAX, &mut |j| {
-            let j = j as usize;
-            if j <= i {
-                return; // 每对只处理一次（较小 i 的一侧）
-            }
-            let (pos_j, r_j, m_j) = snaps[j];
-            let mut diff = pos_i - pos_j;
-            diff.y = 0.0;
-            let dist = diff.length();
-            let min_dist = r_i + r_j;
-            if dist < min_dist && dist > 1e-4 {
-                // dir / distance：越近力越大（参考算法）
-                let f = diff.normalize() / dist;
-                // 质量加权：i 吃的力 ∝ j 的质量占比，j 吃的力 ∝ i 的质量占比
-                let total_mass = snaps[i].2 + m_j;
-                forces[i] += f * (m_j / total_mass);
-                forces[j] -= f * (snaps[i].2 / total_mass);
-            }
-        });
+        snaps
+            .grid
+            .for_each_in_circle(s_i.pos, s_i.radius + MONSTER_RADIUS_MAX, &mut |j| {
+                let j = j as usize;
+                if j <= i {
+                    return; // 每对只处理一次（较小 i 的一侧）
+                }
+                let s_j = &snaps.snaps[j];
+                if s_j.flying {
+                    return; // 桶里只有怪，但飞行怪不参与地面推挤
+                }
+                let mut diff = s_i.pos - s_j.pos;
+                diff.y = 0.0;
+                let dist = diff.length();
+                let min_dist = s_i.radius + s_j.radius;
+                if dist < min_dist && dist > 1e-4 {
+                    // dir / distance：越近力越大（参考算法）
+                    let f = diff.normalize() / dist;
+                    // 质量加权：i 吃的力 ∝ j 的质量占比，j 吃的力 ∝ i 的质量占比
+                    let total_mass = s_i.mass + s_j.mass;
+                    forces[i] += f * (s_j.mass / total_mass);
+                    forces[j] -= f * (s_i.mass / total_mass);
+                }
+            });
     }
-
-    // 力的施加顺序与快照一致（iter 顺序稳定，无结构性变更）
-    let mut idx = 0;
-    for (_, f, mut transform) in monsters.iter_mut() {
+    // 施力：统一写回（entity → 快照下标点查；不在快照里的单位跳过）
+    for (e, f, mut transform) in monsters.iter_mut() {
         if f.is_some() {
             continue;
         }
-        let mut d = forces[idx];
-        idx += 1;
+        let Some(&i) = snaps.index.get(&e) else {
+            continue;
+        };
+        let mut d = forces[i as usize];
         d.y = 0.0;
         let mag = d.length();
         if mag > 1e-4 {
@@ -135,12 +134,15 @@ fn push_out(transform: &mut Transform, self_radius: f32, center: Vec3, static_ra
 
 #[cfg(test)]
 mod tests {
+    use super::super::{targeting, WorldSnaps};
     use super::*;
 
-    /// 质量加权推挤：重叠时小质量位移远大于大质量
+    /// 质量加权推挤：重叠时小质量位移远大于大质量。
+    /// 推挤消费帧首快照：必须先跑 targeting 构建 WorldSnaps
     #[test]
     fn heavy_pushes_light_more() {
         let mut app = App::new();
+        app.init_resource::<WorldSnaps>();
         let world = app.world_mut();
         let mut heavy = test_monster(Faction::Player);
         heavy.mass = 3.0;
@@ -160,7 +162,7 @@ mod tests {
             .id();
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(separate_monsters);
+        schedule.add_systems((targeting, separate_monsters).chain());
         schedule.run(world);
 
         let heavy_move = world
