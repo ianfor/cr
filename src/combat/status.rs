@@ -14,24 +14,31 @@ use crate::constants::*;
 
 pub fn status_effects(
     mut commands: Commands,
-    mut buffed: Query<(Entity, &mut Buffs, Option<&mut Charge>)>,
+    mut buffed: Query<(Entity, &mut Buffs, Option<&mut Charge>, Option<&Stun>)>,
 ) {
-    for (e, mut buffs, mut charge) in &mut buffed {
+    for (e, mut buffs, mut charge, stun_marker) in &mut buffed {
         // 1) 倒计时 + 过期
         for b in buffs.0.iter_mut() {
             b.secs -= TICK_DT;
         }
         buffs.0.retain(|b| b.secs > 0.0);
 
-        // 2) 晕眩：清冲锋蓄力 + 同步派生标记
+        // 2) 晕眩：清冲锋蓄力；Stun 标记只在状态翻转时插/删一次
+        //    （进入晕眩晕插一次、最后一条晕眩晕过期删一次，中间零命令）
         let stunned = buffs.has_cc(CCFlags::STUN);
         if stunned {
             if let Some(c) = charge.as_mut() {
                 c.progress = 0.0;
             }
-            commands.entity(e).insert(Stun);
-        } else {
-            commands.entity(e).remove::<Stun>();
+        }
+        match (stunned, stun_marker.is_some()) {
+            (true, false) => {
+                commands.entity(e).insert(Stun);
+            }
+            (false, true) => {
+                commands.entity(e).remove::<Stun>();
+            }
+            _ => {} // 状态未变：不产生任何命令
         }
 
         // 3) 没有 buff 就删容器：消费方的 Option<&Buffs> 回到 None
@@ -129,6 +136,52 @@ mod tests {
         buffs.apply(stun_buff(3.0)); // 更长：取 3.0
         assert_eq!(buffs.0[0].secs, 3.0);
         assert_eq!(buffs.0.len(), 1, "同名晕眩不叠条目");
+    }
+
+    /// 无关 buff（狂暴）从头到尾不得产生 Stun 标记，
+    /// 也不得反复发出 insert/remove 命令（翻转 diff 的回归）
+    #[test]
+    fn rage_only_buff_never_gains_stun_marker() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<super::super::ProjectileAssets>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        let e = world
+            .spawn((
+                test_monster(Faction::Player),
+                test_attacker(),
+                seek(5.0),
+                Mover { speed: 1.0 },
+                Buffs(vec![ActiveBuff {
+                    name: "Rage",
+                    secs: 10.0,
+                    stacks: 1,
+                    policy: StackPolicy::Refresh,
+                    flags: CCFlags::NONE,
+                    effects: vec![StatMod {
+                        stat: StatKind::MoveSpeed,
+                        op: Op::Mul,
+                        value: 2.0,
+                    }],
+                }]),
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(status_effects);
+        for _ in 0..60 {
+            schedule.run(world);
+            assert!(
+                world.get::<Stun>(e).is_none(),
+                "纯狂暴 buff 不得产生 Stun 标记"
+            );
+        }
+        // 狂暴还在（10s > 2s），容器未删
+        assert!(world.get::<Buffs>(e).is_some());
     }
 
     /// 属性修饰器管线：合成规则（Add 先加、Mul 后乘、Stack 按层数幂）
