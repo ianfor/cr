@@ -166,10 +166,9 @@ pub fn play_card(
     materials: &mut Assets<StandardMaterial>,
     spell_targets: &mut Query<(
         Entity,
+        &Unit,
         &mut Health,
         &Transform,
-        Option<&Monster>,
-        Option<&BuildingCard>,
         Option<&mut Buffs>,
     )>,
     faction: Faction,
@@ -245,20 +244,19 @@ pub fn play_card(
                 ));
                 return;
             }
-            for (e, mut hp, tr, monster, building, mut buffs) in spell_targets.iter_mut() {
-                let target_faction = match (&monster, &building) {
-                    (Some(m), _) => m.faction,
-                    (None, Some(b)) => b.faction,
-                    _ => continue, // 塔等其余实体不吃法术
-                };
+            for (e, u, mut hp, tr, mut buffs) in spell_targets.iter_mut() {
+                if u.kind == UnitKind::Tower {
+                    continue; // 塔不吃法术
+                }
+                let target_faction = u.faction;
                 let mut d = tr.translation - pos;
                 d.y = 0.0;
                 if d.length() > spell.radius {
                     continue;
                 }
                 if target_faction == faction {
-                    // 己方单位：狂暴 buff（仅怪物）
-                    if let (Some(r), Some(_)) = (&spell.rage, monster) {
+                    // 己方单位：狂暴 buff（仅部队）
+                    if let (Some(r), true) = (&spell.rage, u.kind == UnitKind::Troop) {
                         let buff = ActiveBuff {
                             name: "Rage",
                             secs: r.secs,
@@ -286,9 +284,9 @@ pub fn play_card(
                         }
                     }
                 } else {
-                    // 敌方单位：伤害 + 晕眩 buff（仅怪物；Stun 标记由 status 同步）
+                    // 敌方单位：伤害 + 晕眩 buff（仅部队；Stun 标记由 status 同步）
                     hp.current -= spell.damage;
-                    if spell.stun_secs > 0.0 && monster.is_some() {
+                    if spell.stun_secs > 0.0 && u.kind == UnitKind::Troop {
                         let buff = ActiveBuff {
                             name: "Stun",
                             secs: spell.stun_secs,
@@ -321,12 +319,7 @@ pub fn play_card(
 pub fn spell_volley_tick(
     mut commands: Commands,
     mut volleys: Query<(Entity, &mut SpellVolley)>,
-    mut targets: Query<(
-        &mut Health,
-        &Transform,
-        Option<&Monster>,
-        Option<&BuildingCard>,
-    )>,
+    mut targets: Query<(&Unit, &mut Health, &Transform)>,
 ) {
     for (ve, mut v) in &mut volleys {
         if v.next_in > 0 {
@@ -334,13 +327,11 @@ pub fn spell_volley_tick(
             continue;
         }
         let pos = Vec3::new(v.x, 0.0, v.z);
-        for (mut hp, tr, monster, building) in targets.iter_mut() {
-            let target_faction = match (&monster, &building) {
-                (Some(m), _) => m.faction,
-                (None, Some(b)) => b.faction,
-                _ => continue, // 塔等其余实体不吃法术（与瞬发分支一致）
-            };
-            if target_faction == v.faction {
+        for (u, mut hp, tr) in targets.iter_mut() {
+            if u.kind == UnitKind::Tower {
+                continue; // 塔不吃法术（与瞬发分支一致）
+            }
+            if u.faction == v.faction {
                 continue;
             }
             let mut d = tr.translation - pos;
@@ -449,12 +440,7 @@ pub fn spawn_unit(
     let lift = if spec.flying { FLY_HEIGHT } else { 0.0 };
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
-        Monster {
-            faction,
-            card,
-            radius: r,
-            mass: spec.mass,
-        },
+        Unit::troop(faction, card, r, spec.mass),
         Attacker {
             damage: spec.damage,
             attack_range: spec.attack_range,
@@ -515,11 +501,7 @@ fn spawn_building(
 ) {
     let r = BUILDING_RADIUS;
     let mut e = commands.spawn((
-        BuildingCard {
-            faction,
-            card,
-            radius: r,
-        },
+        Unit::building(faction, card, r),
         Lifetime {
             secs: spec.lifetime_secs,
         },
@@ -733,8 +715,8 @@ mod tests {
         assert_eq!(decks.player[DECK_SIZE - 1], card_id);
         // 放置时间未到：只有虚影，没有真兵
         {
-            let mut monsters = world.query::<&Monster>();
-            assert_eq!(monsters.iter(world).count(), 0);
+            let mut troops = world.query_filtered::<&Unit, With<Mover>>();
+            assert_eq!(troops.iter(world).count(), 0);
             let mut deployers = world.query::<&Deploying>();
             assert_eq!(deployers.iter(world).count(), spec.count as usize);
         }
@@ -744,8 +726,8 @@ mod tests {
         for _ in 0..spec.deploy_ticks {
             schedule.run(world);
         }
-        let mut monsters = world.query::<(Entity, &Monster)>();
-        let spawned: Vec<Entity> = monsters.iter(world).map(|(e, _m)| e).collect();
+        let mut troops = world.query::<(Entity, &Unit)>();
+        let spawned: Vec<Entity> = troops.iter(world).map(|(e, _u)| e).collect();
         assert_eq!(spawned.len(), spec.count as usize);
         let attacker = world.get::<Attacker>(spawned[0]).unwrap();
         assert_eq!(attacker.damage, ms.damage);
@@ -798,12 +780,7 @@ mod tests {
         // 敌方怪在法术范围内（距离 1.0 < 1.2）
         let victim = world
             .spawn((
-                Monster {
-                    faction: Faction::Enemy,
-                    card: 0,
-                    radius: 0.5,
-                    mass: 1.0,
-                },
+                Unit::troop(Faction::Enemy, 0, 0.5, 1.0),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 5.0),
             ))
@@ -811,10 +788,7 @@ mod tests {
         // 敌方塔在范围内：不吃法术
         let tower = world
             .spawn((
-                Tower {
-                    faction: Faction::Enemy,
-                    radius: 1.0,
-                },
+                Unit::tower(Faction::Enemy, 1.0),
                 Health::new(6000.0),
                 Transform::from_xyz(1.0, 0.0, 5.0),
             ))
@@ -822,12 +796,7 @@ mod tests {
         // 范围外的己方怪（距离 5 > 1.2）：不掉血
         let bystander = world
             .spawn((
-                Monster {
-                    faction: Faction::Player,
-                    card: 0,
-                    radius: 0.5,
-                    mass: 1.0,
-                },
+                Unit::troop(Faction::Player, 0, 0.5, 1.0),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 0.0),
             ))
@@ -863,11 +832,11 @@ mod tests {
             world.get::<Health>(bystander).unwrap().current,
             2000.0
         );
-        // 法术瞬发：无虚影、无实体
+        // 法术瞬发：无虚影、无新单位（场上仍是预置的 2 怪 + 1 塔）
         let mut deployers = world.query::<&Deploying>();
         assert_eq!(deployers.iter(world).count(), 0);
-        let mut monsters = world.query::<&Monster>();
-        assert_eq!(monsters.iter(world).count(), 2, "法术不应产生新单位");
+        let mut units = world.query::<&Unit>();
+        assert_eq!(units.iter(world).count(), 3, "法术不应产生新单位");
     }
 
     /// 建筑卡出牌：己方半场生成虚影，落成建筑实体（可被索敌、有寿命）
@@ -907,9 +876,12 @@ mod tests {
         for _ in 0..CARDS[19].deploy_ticks {
             schedule.run(world);
         }
-        let mut buildings = world.query::<&BuildingCard>();
-        let n = buildings.iter(world).count();
-        assert_eq!(n, 1, "建筑落地应生成 BuildingCard 实体");
+        let mut buildings = world.query::<&Unit>();
+        let n = buildings
+            .iter(world)
+            .filter(|u| u.kind == UnitKind::Building)
+            .count();
+        assert_eq!(n, 1, "建筑落地应生成 Building 类 Unit 实体");
     }
 }
 
@@ -980,10 +952,7 @@ mod zone_tests {
 
         // 敌方左公主塔活着
         app.world_mut().spawn((
-            Tower {
-                faction: Faction::Enemy,
-                radius: 1.0,
-            },
+            Unit::tower(Faction::Enemy, 1.0),
             Health::new(6000.0),
             Transform::from_xyz(-6.5, 0.0, 8.5),
         ));
@@ -1008,8 +977,8 @@ mod zone_tests {
             ELIXIR_START,
             "区域外部署不应扣费"
         );
-        let mut q = app.world_mut().query::<&Monster>();
-        assert_eq!(q.iter(app.world()).count(), 0, "区域外部署不应出兵");
+        let mut q = app.world_mut().query::<&Unit>();
+        assert_eq!(q.iter(app.world()).count(), 1, "区域外部署不应出兵（仅存敌方塔）");
     }
 
     /// 万箭出牌链路：扣 3 圣水、手牌循环离手、生成 SpellVolley 多波实体

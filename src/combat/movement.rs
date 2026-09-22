@@ -11,7 +11,7 @@ use super::{edge_dist, WorldSnaps};
 pub fn moving(
     snaps: Res<WorldSnaps>,
     mut movers: Query<(
-        &Monster,
+        &Unit,
         &Mover,
         &mut Transform,
         &Attacker,
@@ -20,7 +20,7 @@ pub fn moving(
         Option<&Flying>,
     )>,
 ) {
-    for (m, mover, mut transform, attacker, mut charge, buffs, flying) in &mut movers {
+    for (u, mover, mut transform, attacker, mut charge, buffs, flying) in &mut movers {
         // 禁移动（眩晕/缠绕）：实时查询 buff 标志位，无派生缓存；
         // 被控期间冲锋蓄力清零
         if buffs.map(|b| b.channels().cannot_move).unwrap_or(false) {
@@ -38,12 +38,12 @@ pub fn moving(
         };
         let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
-        let edge = edge_dist(pos, m.radius, target.pos, target.radius);
+        let edge = edge_dist(pos, u.radius, target.pos, target.radius);
         if edge <= attacker.attack_range + 0.05 {
             continue; // 射程内：attacking 负责，原地输出
         }
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
-        let stop_dist = attacker.attack_range + m.radius + target.radius;
+        let stop_dist = attacker.attack_range + u.radius + target.radius;
         let goal = steering_goal(pos, target.pos, flying.is_some());
         let mut to_goal = goal - pos;
         to_goal.y = 0.0;
@@ -120,10 +120,7 @@ mod tests {
         let mut app = setup();
         let world = app.world_mut();
         world.spawn((
-            Tower {
-                faction: Faction::Enemy,
-                radius: 1.0,
-            },
+            Unit::tower(Faction::Enemy, 1.0),
             test_attacker(),
             Targeting(TargetPolicy::Guard),
             Health::new(60000.0),
@@ -168,10 +165,7 @@ mod tests {
         let world = app.world_mut();
         let target = world
             .spawn((
-                Tower {
-                    faction: Faction::Enemy,
-                    radius: 1.0,
-                },
+                Unit::tower(Faction::Enemy, 1.0),
                 test_attacker(),
                 Targeting(TargetPolicy::Guard),
                 Health::new(60000.0),

@@ -27,78 +27,48 @@ pub fn targeting(
         &mut Attacker,
         &Targeting,
         &Transform,
-        Option<&Monster>,
-        Option<&Tower>,
-        Option<&BuildingCard>,
+        &Unit,
         Option<&Buffs>,
     )>,
-    monsters: Query<(Entity, &Monster, &Transform, Option<&Flying>)>,
-    towers: Query<(Entity, &Tower, &Transform)>,
-    buildings: Query<(Entity, &BuildingCard, &Transform)>,
+    all: Query<(Entity, &Unit, &Transform, Option<&Flying>)>,
 ) {
     // ===== 全场快照（怪+塔+建筑，顺序两端一致） =====
     let WorldSnaps { snaps, grid, index } = &mut *snaps_res;
     snaps.clear();
-    snaps.extend(monsters.iter().map(|(e, m, t, f)| UnitSnap {
+    snaps.extend(all.iter().map(|(e, u, t, f)| UnitSnap {
         entity: e,
-        faction: m.faction,
+        kind: u.kind,
+        faction: u.faction,
         pos: t.translation,
-        radius: m.radius,
-        mass: m.mass,
-        is_tower: false,
-        is_building: false,
+        radius: u.radius,
+        mass: u.mass,
         flying: f.is_some(),
     }));
-    snaps.extend(towers.iter().map(|(e, t, tr)| UnitSnap {
-        entity: e,
-        faction: t.faction,
-        pos: tr.translation,
-        radius: t.radius,
-        mass: 0.0,
-        is_tower: true,
-        is_building: false,
-        flying: false,
-    }));
-    snaps.extend(buildings.iter().map(|(e, b, tr)| UnitSnap {
-        entity: e,
-        faction: b.faction,
-        pos: tr.translation,
-        radius: b.radius,
-        mass: 0.0,
-        is_tower: false,
-        is_building: true,
-        flying: false,
-    }));
+    // 确定性铁律：统一 query 的迭代序是 archetype 序，不保证 怪→塔→建筑 分组。
+    // sort_by_key 是稳定排序：同类保持 query 相对序（与旧单类 query 的相对序一致），
+    // 类间固定 Troop→Tower→Building——逐比特复刻旧"三段拼接"的快照序列，
+    // 保住 merge_nearest 等距怪优先 / nearest_static 塔先建筑后 的 tie-break 契约
+    snaps.sort_by_key(|s| s.kind.rank());
 
     // ===== 空间索引：网格只装怪物；entity→下标点查表（只 get 不迭代） =====
     grid.clear();
     index.clear();
     for (i, s) in snaps.iter().enumerate() {
-        if !s.is_building_kind() {
+        if s.kind == UnitKind::Troop {
             grid.insert(s.pos, i as u32);
         }
         index.insert(s.entity, i as u32);
     }
     let (snaps, grid, index) = (&*snaps, &*grid, &*index);
 
-    for (entity, mut attacker, targeting, transform, monster, tower, building, buffs) in
-        &mut units
-    {
+    for (entity, mut attacker, targeting, transform, unit, buffs) in &mut units {
         // 禁索敌（眩晕/致盲）：实时查询 buff 标志位，无派生缓存
         if buffs.map(|b| b.channels().cannot_seek).unwrap_or(false) {
             continue;
         }
         let pos = transform.translation;
-        let faction = monster
-            .map(|m| m.faction)
-            .or(tower.map(|t| t.faction))
-            .or(building.map(|b| b.faction))
-            .expect("攻击实体必为怪/塔/建筑之一");
-        let self_radius = monster
-            .map(|m| m.radius)
-            .or(tower.map(|t| t.radius))
-            .or(building.map(|b| b.radius))
-            .expect("攻击实体必为怪/塔/建筑之一");
+        let faction = unit.faction;
+        let self_radius = unit.radius;
 
         match &targeting.0 {
             // ===== 守卫（塔/建筑卡）：只打怪，出射程丢锁 =====
@@ -280,10 +250,7 @@ mod tests {
     fn spawn_guard_tower(world: &mut World, faction: Faction, pos: Vec3) -> Entity {
         world
             .spawn((
-                Tower {
-                    faction,
-                    radius: 1.0,
-                },
+                Unit::tower(faction, 1.0),
                 Attacker {
                     damage: TOWER_ATTACK_DAMAGE,
                     attack_range: 6.0,

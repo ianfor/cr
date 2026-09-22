@@ -47,21 +47,19 @@ pub(crate) use grid::SpatialGrid;
 /// 可被攻击单位的快照（索敌/攻击/移动/推挤共用），避免嵌套查询与读写冲突
 pub(crate) struct UnitSnap {
     pub entity: Entity,
+    pub kind: UnitKind,
     pub faction: Faction,
     pub pos: Vec3,
     pub radius: f32,
     /// 质量（推挤力分配用；塔/建筑不参与推挤，填 0）
     pub mass: f32,
-    pub is_tower: bool,
-    /// 建筑卡（与塔同属"建筑"类目标，只攻建筑单位的索敌目标）
-    pub is_building: bool,
     pub flying: bool,
 }
 
 impl UnitSnap {
     /// 是否建筑类目标（塔或建筑卡）
     pub(crate) fn is_building_kind(&self) -> bool {
-        self.is_tower || self.is_building
+        matches!(self.kind, UnitKind::Tower | UnitKind::Building)
     }
 }
 
@@ -111,7 +109,7 @@ pub fn gather_input(
     decks: Res<Decks>,
     selected: Res<SelectedCard>,
     buttons: Query<&Interaction, With<Button>>,
-    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
     bot_mode: Option<Res<BotMode>>,
     mut pending: ResMut<PendingClicks>,
     net: Option<Res<NetClient>>,
@@ -171,7 +169,8 @@ pub fn gather_input(
     if net.is_some() || bot_mode.is_some() {
         let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
             .iter()
-            .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+            .filter(|(u, _, _)| u.kind == UnitKind::Tower)
+            .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
             .collect();
         if !cards::deploy_zone_ok(&CARDS[card as usize], faction, point, &tower_snaps) {
             return; // 区域不可部署：无效操作
@@ -219,20 +218,20 @@ pub fn apply_commands(
     mut log: ResMut<CommandLog>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
-    mut     spell_targets: Query<(
+    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
+    mut spell_targets: Query<(
         Entity,
+        &Unit,
         &mut Health,
         &Transform,
-        Option<&Monster>,
-        Option<&BuildingCard>,
         Option<&mut Buffs>,
     )>,
 ) {
     // 部署区域判定用的塔快照（faction, is_king, pos）
     let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
         .iter()
-        .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+        .filter(|(u, _, _)| u.kind == UnitKind::Tower)
+        .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
         .collect();
 
     let mut exec: Vec<GameCommand> = buffer.local.remove(&tick.0).unwrap_or_default();
@@ -280,10 +279,7 @@ pub fn check_game_over(
     mut commands: Commands,
     mut state: ResMut<net::SimState>,
     timer: Res<crate::match_flow::MatchTimer>,
-    kings: Query<(&Tower, &Health), With<KingTower>>,
-    towers: Query<(Entity, &Tower, &Health)>,
-    monsters: Query<(Entity, &Monster)>,
-    buildings: Query<(Entity, &BuildingCard)>,
+    units: Query<(Entity, &Unit, &Health, Option<&KingTower>)>,
     net: Option<Res<NetClient>>,
 ) {
     use crate::match_flow::MatchPhase;
@@ -308,17 +304,19 @@ pub fn check_game_over(
     // 1) 国王塔死亡：任何阶段立即结束
     // 2) 加时/拼血：任意塔死亡 = 猝死；双方同帧掉塔 = 平局
     // 返回值：None = 对局继续；Some(None) = 平局；Some(Some(w)) = w 胜
-    let outcome: Option<Option<Faction>> = if let Some(loser) = kings
+    let outcome: Option<Option<Faction>> = if let Some(loser) = units
         .iter()
-        .find(|(_, hp)| hp.current <= 0.0)
-        .map(|(t, _)| t.faction)
+        .find(|(_, _, hp, k)| k.is_some() && hp.current <= 0.0)
+        .map(|(_, u, _, _)| u.faction)
     {
         Some(Some(other(loser)))
     } else if matches!(timer.phase, MatchPhase::Overtime | MatchPhase::Drain) {
         let mut dead = (false, false);
-        for (_, t, hp) in &towers {
-            if hp.current <= 0.0 {
-                match t.faction {
+        for (_, u, hp, _) in &units {
+            // 只看塔（含王塔——王塔已死会先进上面的分支）：
+            // 加时拆掉建筑卡不算猝死
+            if u.kind == UnitKind::Tower && hp.current <= 0.0 {
+                match u.faction {
                     Faction::Player => dead.0 = true,
                     Faction::Enemy => dead.1 = true,
                 }
@@ -340,22 +338,11 @@ pub fn check_game_over(
     *state = net::SimState::GameOver(result);
     info!("对局结束：{:?}", result);
 
-    // 清除失败方所有塔和怪物（平局则双方保留）
+    // 清除失败方所有单位（塔/怪/建筑卡；平局则双方保留）
     if let Some(winner) = result {
         let loser = other(winner);
-        for (e, t, _) in &towers {
-            if t.faction == loser {
-                commands.entity(e).despawn();
-            }
-        }
-        for (e, m) in &monsters {
-            if m.faction == loser {
-                commands.entity(e).despawn();
-            }
-        }
-        // 失败方的建筑卡也一并清除（否则靠寿命慢慢自毁，结算画面不干净）
-        for (e, b) in &buildings {
-            if b.faction == loser {
+        for (e, u, _, _) in &units {
+            if u.faction == loser {
                 commands.entity(e).despawn();
             }
         }
@@ -372,14 +359,14 @@ pub fn check_game_over(
 pub fn despawn_dead(
     mut commands: Commands,
     timer: Res<crate::match_flow::MatchTimer>,
-    units: Query<(Entity, &Health, Option<&Tower>), (Changed<Health>, Without<KingTower>)>,
+    units: Query<(Entity, &Health, &Unit), (Changed<Health>, Without<KingTower>)>,
 ) {
     use crate::match_flow::MatchPhase;
 
     let sudden_death_phase = matches!(timer.phase, MatchPhase::Overtime | MatchPhase::Drain);
-    for (e, h, tower) in &units {
+    for (e, h, u) in &units {
         if h.current <= 0.0 {
-            if tower.is_some() && sudden_death_phase {
+            if u.kind == UnitKind::Tower && sudden_death_phase {
                 continue;
             }
             commands.entity(e).despawn();
@@ -442,7 +429,7 @@ pub fn spell_fx_spawn(
     mut cursor: Local<usize>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    towers: Query<(&Tower, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
 ) {
     // 世界重置后日志清空：cursor 回退到 0 重新跟（seek 回退重追时特效会重放，无害）
     if *cursor > log.0.len() {
@@ -497,7 +484,9 @@ pub fn spell_fx_spawn(
                 // 本波箭矢：从施法方王塔顶射出（王塔已毁则跳过，对局将终）
                 let Some(king_top) = towers
                     .iter()
-                    .find(|(t, _, k)| k.is_some() && t.faction == faction)
+                    .find(|(u, _, k)| {
+                        u.kind == UnitKind::Tower && k.is_some() && u.faction == faction
+                    })
                     .map(|(_, tr, _)| tr.translation + Vec3::Y * 4.2)
                 else {
                     continue;
@@ -596,6 +585,28 @@ pub fn spell_arrows_fly(
     }
 }
 
+/// 多段法术落点危险圈（纯表现层）：法术结算期间在施法点持续显示作用范围。
+/// 生命周期与模拟侧 SpellVolley 实体严格一致——放置时生成、最后一波
+/// 落地后销毁，圈也随之消失（模拟实体是唯一权威，回放模式自动正确）
+pub fn spell_volley_indicator(
+    volleys: Query<&SpellVolley>,
+    mut gizmos: bevy::gizmos::prelude::Gizmos,
+) {
+    for v in &volleys {
+        gizmos
+            .circle(
+                Isometry3d::new(
+                    Vec3::new(v.x, 0.1, v.z),
+                    Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+                ),
+                v.radius,
+                // 万箭橙（与卡色一致）：危险区，和瞄准时的黄圈区分
+                Color::srgb(0.95, 0.6, 0.2),
+            )
+            .resolution(64);
+    }
+}
+
 /// 光环动画：半径 0 → end_radius 扩散，透明度淡出，播完销毁
 pub fn spell_fx_update(
     mut commands: Commands,
@@ -625,15 +636,16 @@ pub fn spell_fx_update(
 
 // ===== 测试辅助 =====
 
-/// 测试用白板骑士 Monster（纯物理属性，机制全部由能力组件表达）
+/// 测试用白板骑士部队 Unit（纯物理属性，机制全部由能力组件表达）
 #[cfg(test)]
-pub(crate) fn test_monster(faction: Faction) -> Monster {
-    Monster {
-        faction,
-        card: 0,
-        radius: 0.5,
-        mass: 1.0,
-    }
+pub(crate) fn test_monster(faction: Faction) -> Unit {
+    Unit::troop(faction, 0, 0.5, 1.0)
+}
+
+/// 测试用白板塔 Unit
+#[cfg(test)]
+pub(crate) fn test_tower(faction: Faction) -> Unit {
+    Unit::tower(faction, 1.0)
 }
 
 /// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速）
@@ -669,10 +681,7 @@ mod tests {
 
     fn spawn_tower(world: &mut World, faction: Faction, king: bool, hp: f32) {
         let mut e = world.spawn((
-            Tower {
-                faction,
-                radius: 1.2,
-            },
+            Unit::tower(faction, 1.2),
             Attacker {
                 damage: TOWER_ATTACK_DAMAGE,
                 attack_range: 6.0,
@@ -729,10 +738,13 @@ mod tests {
             SimState::GameOver(Some(Faction::Enemy))
         ));
         // 蓝方（失败方）塔和怪都被清除
-        let mut towers = world.query::<&Tower>();
-        assert_eq!(towers.iter(world).count(), 0);
-        let mut monsters = world.query::<&Monster>();
-        let remaining: Vec<&Monster> = monsters.iter(world).collect();
+        let mut towers = world.query::<&Unit>();
+        assert_eq!(
+            towers.iter(world).filter(|u| u.kind == UnitKind::Tower).count(),
+            0
+        );
+        let mut monsters = world.query_filtered::<&Unit, With<Mover>>();
+        let remaining: Vec<&Unit> = monsters.iter(world).collect();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].faction, Faction::Enemy);
     }
@@ -775,8 +787,11 @@ mod tests {
             world.resource::<SimState>(),
             SimState::GameOver(Some(Faction::Enemy))
         ));
-        let mut towers = world.query::<&Tower>();
-        assert_eq!(towers.iter(world).count(), 0);
+        let mut towers = world.query::<&Unit>();
+        assert_eq!(
+            towers.iter(world).filter(|u| u.kind == UnitKind::Tower).count(),
+            0
+        );
     }
 
     /// 拼血阶段：所有塔每帧扣 DRAIN_PER_TICK
@@ -792,10 +807,7 @@ mod tests {
         let world = app.world_mut();
         let tower = world
             .spawn((
-                Tower {
-                    faction: Faction::Player,
-                    radius: 1.0,
-                },
+                Unit::tower(Faction::Player, 1.0),
                 Health::new(1000.0),
             ))
             .id();

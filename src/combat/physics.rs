@@ -18,13 +18,13 @@ use crate::constants::*;
 ///   帧中出生的单位（墓碑骷髅）下一帧起参与推挤
 pub fn separate_monsters(
     snaps: Res<WorldSnaps>,
-    mut monsters: Query<(Entity, Option<&Flying>, &mut Transform), With<Monster>>,
+    mut monsters: Query<(Entity, &Unit, Option<&Flying>, &mut Transform)>,
 ) {    // 力累积：与快照下标平行
     let mut forces = vec![Vec3::ZERO; snaps.snaps.len()];
     // 配对：快照坐标互比（网格桶同样建自这份坐标）
     for i in 0..snaps.snaps.len() {
         let s_i = &snaps.snaps[i];
-        if s_i.is_building_kind() || s_i.flying {
+        if s_i.kind != UnitKind::Troop || s_i.flying {
             continue; // 只推地面怪
         }
         // 邻域半径 = r_i + MONSTER_RADIUS_MAX：覆盖一切可能接触的对
@@ -54,8 +54,8 @@ pub fn separate_monsters(
             });
     }
     // 施力：统一写回（entity → 快照下标点查；不在快照里的单位跳过）
-    for (e, f, mut transform) in monsters.iter_mut() {
-        if f.is_some() {
+    for (e, u, f, mut transform) in monsters.iter_mut() {
+        if u.kind != UnitKind::Troop || f.is_some() {
             continue;
         }
         let Some(&i) = snaps.index.get(&e) else {
@@ -76,11 +76,11 @@ pub fn separate_monsters(
     }
 }
 
-/// 河道禁入（硬约束）：不在桥道上的怪物不允许停留在河面，挤下去立刻推回岸边。
+/// 河道禁入（硬约束）：不在桥道上的地面部队不允许停留在河面，挤下去立刻推回岸边。
 /// 飞行单位无视河道。转向逻辑管"走"，这个管"挤"
-pub fn keep_out_of_river(mut monsters: Query<(&Monster, Option<&Flying>, &mut Transform)>) {
-    for (_, f, mut transform) in &mut monsters {
-        if f.is_some() {
+pub fn keep_out_of_river(mut monsters: Query<(&Unit, Option<&Flying>, &mut Transform)>) {
+    for (u, f, mut transform) in &mut monsters {
+        if u.kind != UnitKind::Troop || f.is_some() {
             continue;
         }
         let p = &mut transform.translation;
@@ -97,26 +97,27 @@ pub fn keep_out_of_river(mut monsters: Query<(&Monster, Option<&Flying>, &mut Tr
     }
 }
 
-/// 怪物与静态建筑（塔/建筑卡）的阻挡：不能穿过；飞行单位无视
+/// 地面部队与静态建筑（塔/建筑卡）的阻挡：不能穿过；飞行单位无视。
+/// 静态体判据 = 无 Mover（生产代码里塔/建筑永无 Mover、部队恒有）
 pub fn separate_from_statics(
-    mut monsters: Query<(&Monster, Option<&Flying>, &mut Transform)>,
-    towers: Query<(&Tower, &Transform), Without<Monster>>,
-    buildings: Query<(&BuildingCard, &Transform), (Without<Monster>, Without<Tower>)>,
+    mut movers: Query<(&Unit, Option<&Flying>, &mut Transform), With<Mover>>,
+    statics: Query<(&Unit, &Transform), Without<Mover>>,
 ) {
-    for (m, f, mut transform) in &mut monsters {
+    for (m, f, mut transform) in &mut movers {
         if f.is_some() {
             continue;
         }
-        for (tower, tower_transform) in &towers {
-            push_out(&mut transform, m.radius, tower_transform.translation, tower.radius);
+        // 两遍扫描：先塔后建筑——保持旧"塔 query 全部 → 建筑 query 全部"
+        // 的推动顺序（多个重叠圆的连续 push_out 结果与顺序相关，不可变序）
+        for (s, st) in &statics {
+            if s.kind == UnitKind::Tower {
+                push_out(&mut transform, m.radius, st.translation, s.radius);
+            }
         }
-        for (building, building_transform) in &buildings {
-            push_out(
-                &mut transform,
-                m.radius,
-                building_transform.translation,
-                building.radius,
-            );
+        for (s, st) in &statics {
+            if s.kind == UnitKind::Building {
+                push_out(&mut transform, m.radius, st.translation, s.radius);
+            }
         }
     }
 }
@@ -134,7 +135,7 @@ fn push_out(transform: &mut Transform, self_radius: f32, center: Vec3, static_ra
 
 #[cfg(test)]
 mod tests {
-    use super::super::{targeting, WorldSnaps};
+    use super::super::{targeting, test_monster, WorldSnaps};
     use super::*;
 
     /// 质量加权推挤：重叠时小质量位移远大于大质量。
@@ -182,14 +183,5 @@ mod tests {
         // 单帧位移不得超过力上限（防闪现）
         assert!(light_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
         assert!(heavy_move <= MAX_STEERING_FORCE * TICK_DT + 1e-6);
-    }
-
-    fn test_monster(faction: Faction) -> crate::components::Monster {
-        crate::components::Monster {
-            faction,
-            card: 0,
-            radius: 0.5,
-            mass: 1.0,
-        }
     }
 }

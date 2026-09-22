@@ -36,18 +36,60 @@ pub fn faction_color(faction: Faction) -> Color {
     }
 }
 
-/// 场上单位（怪/塔/建筑卡的统一标记）：阵营 + 卡种 + 物理尺寸。
+/// 单位类别。rank() 是快照构建的确定性类间排序键（怪→塔→建筑，
+/// 对齐旧三 query 拼接序，等距平局 tie-break 依赖它）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UnitKind {
+    /// 部队（可移动、参与推挤）
+    Troop,
+    /// 塔（公主塔/国王塔，KingTower marker 另挂）
+    Tower,
+    /// 建筑卡（加农炮/墓碑，原地守卫、有寿命）
+    Building,
+}
+
+impl UnitKind {
+    /// 类间稳定排序键（快照确定性契约：怪→塔→建筑）
+    pub fn rank(self) -> u8 {
+        match self {
+            UnitKind::Troop => 0,
+            UnitKind::Tower => 1,
+            UnitKind::Building => 2,
+        }
+    }
+}
+
+/// 场上单位（怪/塔/建筑卡的统一组件）：类别 + 阵营 + 卡种 + 物理尺寸。
 /// 战斗机制拆在能力组件上（Attacker/Targeting/Mover/...），
 /// 挂什么组件就有什么能力——加新机制 = 加新组件，不改现有类型
-#[derive(Component)]
-pub struct Monster {
+#[derive(Component, Clone, Copy)]
+pub struct Unit {
+    pub kind: UnitKind,
     pub faction: Faction,
-    /// 卡牌 id（CARDS 中的索引）：观测用单位类型标识，不参与模拟逻辑
-    pub card: u8,
+    /// 卡牌 id（CARDS 中的索引）：观测用单位类型标识，不参与模拟逻辑。
+    /// 塔 = None（Option 而非哨兵：sim_env 有 (card as usize).min(len-1) clamp，
+    /// 哨兵会被静默钳成合法通道污染观测）
+    pub card: Option<u8>,
     /// 碰撞半径（索敌边缘距离/推挤/静态阻挡共用）
     pub radius: f32,
-    /// 质量：推挤时按质量分配力，大质量推开小质量
+    /// 质量：推挤时按质量分配力，大质量推开小质量（塔/建筑恒 0）
     pub mass: f32,
+}
+
+impl Unit {
+    pub fn troop(faction: Faction, card: u8, radius: f32, mass: f32) -> Self {
+        Self { kind: UnitKind::Troop, faction, card: Some(card), radius, mass }
+    }
+    pub fn tower(faction: Faction, radius: f32) -> Self {
+        Self { kind: UnitKind::Tower, faction, card: None, radius, mass: 0.0 }
+    }
+    pub fn building(faction: Faction, card: u8, radius: f32) -> Self {
+        Self { kind: UnitKind::Building, faction, card: Some(card), radius, mass: 0.0 }
+    }
+    /// 是否建筑类目标（塔或建筑卡）
+    pub fn is_building_kind(&self) -> bool {
+        matches!(self.kind, UnitKind::Tower | UnitKind::Building)
+    }
 }
 
 // ===== 战斗能力组件（怪/塔/建筑按需挂载） =====
@@ -380,23 +422,6 @@ pub struct Spawner {
     pub card_id: u8,
     /// 出兵倒计时（秒）
     pub cooldown: f32,
-}
-
-/// 建筑卡实体（加农炮/墓碑）：部署于己方半场，速度为 0。
-/// 可被怪物/只攻建筑单位当作目标（与塔同属"建筑"类）；
-/// 攻击/出兵/寿命分别由 Attacker/Spawner/Lifetime 能力组件表达
-#[derive(Component)]
-pub struct BuildingCard {
-    pub faction: Faction,
-    /// 对应卡 id（观测网格/出兵用）
-    pub card: u8,
-    pub radius: f32,
-}
-
-#[derive(Component)]
-pub struct Tower {
-    pub faction: Faction,
-    pub radius: f32,
 }
 
 /// 国王塔标记（被摧毁即输掉对局）

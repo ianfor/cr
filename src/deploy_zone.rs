@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 use crate::bot::BotMode;
 use crate::cards::SelectedCard;
-use crate::components::{Decks, Faction, KingTower, Tower};
+use crate::components::{Decks, Faction, KingTower, Unit, UnitKind};
 use crate::constants::{CardKind, CARDS, HAND_SIZE, PRINCESS_Z, RIVER_HALF_WIDTH};
 use crate::net::{NetClient, SimState};
 
@@ -73,7 +73,7 @@ pub fn setup(
 /// 每帧按本方阵营与塔存活状态刷新区域显示
 pub fn update(
     net: Option<Res<NetClient>>,
-    towers: Query<(&Tower, &Transform, Option<&KingTower>), Without<DeployZone>>,
+    towers: Query<(&Unit, &Transform, Option<&KingTower>), Without<DeployZone>>,
     mut zones: Query<(&DeployZone, &mut Transform, &mut Visibility)>,
 ) {
     let half_depth = 14.0 - RIVER_HALF_WIDTH;
@@ -107,8 +107,11 @@ pub fn update(
 
     // 敌方该侧公主塔是否还在（在则该侧敌半场不可下）
     let princess_alive = |x_sign: f32| {
-        towers.iter().any(|(t, tr, k)| {
-            t.faction != my && k.is_none() && tr.translation.x.signum() == x_sign
+        towers.iter().any(|(u, tr, k)| {
+            u.kind == UnitKind::Tower
+                && u.faction != my
+                && k.is_none()
+                && tr.translation.x.signum() == x_sign
         })
     };
     let expand_left = !princess_alive(-1.0);

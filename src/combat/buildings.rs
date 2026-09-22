@@ -21,7 +21,7 @@ pub fn building_lifetime(mut commands: Commands, mut buildings: Query<(Entity, &
 /// 不走虚影——出兵是建筑行为而非玩家指令）
 pub fn building_spawner(
     mut commands: Commands,
-    mut spawners: Query<(&BuildingCard, &mut Spawner, &Transform)>,
+    mut spawners: Query<(&Unit, &mut Spawner, &Transform)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -67,11 +67,7 @@ mod tests {
 
         // 墓碑：4s 一只骷髅（card 1）
         world.spawn((
-            BuildingCard {
-                faction: Faction::Player,
-                card: 20,
-                radius: 0.6,
-            },
+            Unit::building(Faction::Player, 20, 0.6),
             Lifetime { secs: 100.0 },
             Spawner {
                 interval: 4.0,
@@ -83,11 +79,7 @@ mod tests {
         ));
         // 加农炮：0.9s 一发，打不到空军
         world.spawn((
-            BuildingCard {
-                faction: Faction::Enemy,
-                card: 19,
-                radius: 0.6,
-            },
+            Unit::building(Faction::Enemy, 19, 0.6),
             Lifetime { secs: 100.0 },
             Attacker {
                 damage: 90.0,
@@ -127,8 +119,11 @@ mod tests {
             schedule.run(world); // 4.17s
         }
         // 墓碑出了 1 只骷髅（4s 时），第 2 只要 8s
-        let mut monsters = world.query::<&Monster>();
-        let skeletons = monsters.iter(world).filter(|m| m.card == 1).count();
+        let mut monsters = world.query::<&Unit>();
+        let skeletons = monsters
+            .iter(world)
+            .filter(|u| u.kind == UnitKind::Troop && u.card == Some(1))
+            .count();
         assert_eq!(skeletons, 1, "墓碑 4s 应出 1 只骷髅");
         // 加农炮已开火：场上存在追踪子弹
         let mut projectiles = world.query::<&Projectile>();
@@ -145,11 +140,7 @@ mod tests {
         let mut app = App::new();
         let world = app.world_mut();
         world.spawn((
-            BuildingCard {
-                faction: Faction::Player,
-                card: 19,
-                radius: 0.6,
-            },
+            Unit::building(Faction::Player, 19, 0.6),
             Lifetime { secs: 1.0 },
             Health::new(1400.0),
             Transform::from_xyz(0.0, 0.7, -5.0),
@@ -160,7 +151,14 @@ mod tests {
         for _ in 0..35 {
             schedule.run(world); // 1.17s > 1.0s 寿命
         }
-        let mut buildings = world.query::<&BuildingCard>();
-        assert_eq!(buildings.iter(world).count(), 0, "寿命到必须自毁");
+        let mut buildings = world.query::<&Unit>();
+        assert_eq!(
+            buildings
+                .iter(world)
+                .filter(|u| u.kind == UnitKind::Building)
+                .count(),
+            0,
+            "寿命到必须自毁"
+        );
     }
 }

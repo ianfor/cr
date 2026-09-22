@@ -46,10 +46,7 @@ mod tests {
         let world = app.world_mut();
 
         world.spawn((
-            Tower {
-                faction: Faction::Enemy,
-                radius: 1.0,
-            },
+            Unit::tower(Faction::Enemy, 1.0),
             test_attacker(),
             Targeting(TargetPolicy::Guard),
             Health::new(6000.0),
@@ -223,10 +220,7 @@ mod tests {
         let world = app.world_mut();
         // 敌方塔做行军目标
         world.spawn((
-            Tower {
-                faction: Faction::Enemy,
-                radius: 1.0,
-            },
+            Unit::tower(Faction::Enemy, 1.0),
             test_attacker(),
             Targeting(TargetPolicy::Guard),
             Health::new(60000.0),

@@ -25,7 +25,10 @@ pub struct TowerSpec {
 /// 重叠下一帧才被解开，旧录像结果失真
 /// v8：万箭齐发改多波结算（3 波×1/3 伤害，首波 0.5s 波隔 0.4s，
 /// 按落波时位置判定——可走位躲），旧录像结果失真
-pub const SIM_VERSION: u32 = 8;
+/// v9：Monster/Tower/BuildingCard 三组件统一为 Unit（kind 字段区分）；
+/// 意图行为中性，但快照构建改单 query 稳定排序、send_hash 算法变化
+/// （纳入建筑血量）、终局清理补清建筑，旧录像失同步告警属预期
+pub const SIM_VERSION: u32 = 9;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）

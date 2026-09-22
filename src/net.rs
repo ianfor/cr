@@ -9,7 +9,7 @@ use std::thread;
 use bevy::prelude::*;
 
 use crate::components::{
-    CommandBuffer, Decks, Elixir, Faction, GameCommand, Health, Monster, Tick, Tower,
+    CommandBuffer, Decks, Elixir, Faction, GameCommand, Health, Tick, Unit,
 };
 use crate::constants::INPUT_DELAY;
 use crate::protocol::{read_msg, write_msg, ClientMsg, CommandWire, ServerMsg};
@@ -215,25 +215,24 @@ pub fn sim_ready(
 /// 每帧结束：计算状态哈希并发送给对方比对
 pub fn send_hash(
     tick: Res<Tick>,
-    monsters: Query<(&Transform, &Health, &Monster)>,
-    towers: Query<&Health, With<Tower>>,
+    units: Query<(&Transform, &Health, &Unit)>,
     elixir: Res<Elixir>,
     decks: Res<Decks>,
     mut hashes: ResMut<OwnHashes>,
     net: Option<Res<NetClient>>,
 ) {
-    // 位运算折叠，与遍历顺序无关（wrapping/XOR 可交换）
+    // 位运算折叠，与遍历顺序无关（wrapping/XOR 可交换）。
+    // v9 起建筑卡血量也纳入哈希（旧版只哈希怪+塔，是失同步检测盲区）
     let mut h = 0u32;
-    for (t, hp, m) in &monsters {
+    for (t, hp, u) in &units {
         h = h.wrapping_add(
             t.translation.x.to_bits()
                 ^ t.translation.z.to_bits()
                 ^ hp.current.to_bits()
-                ^ (m.faction.index() as u32),
+                ^ (u.faction.index() as u32)
+                ^ ((u.kind.rank() as u32) << 16)
+                ^ ((u.card.unwrap_or(u8::MAX) as u32) << 24),
         );
-    }
-    for hp in &towers {
-        h = h.wrapping_add(hp.current.to_bits().rotate_left(7));
     }
     h = h.wrapping_add(elixir.player.to_bits() ^ elixir.enemy.to_bits().rotate_left(11));
     // 牌库牌序也是模拟状态

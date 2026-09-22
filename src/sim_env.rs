@@ -168,9 +168,10 @@ pub fn elixir_of(world: &mut World, faction: Faction) -> f32 {
 
 /// 塔快照 (faction, is_king, pos)
 pub fn tower_snaps(world: &mut World) -> Vec<(Faction, bool, Vec3)> {
-    let mut q = world.query::<(&Tower, &Transform, Option<&KingTower>)>();
+    let mut q = world.query::<(&Unit, &Transform, Option<&KingTower>)>();
     q.iter(world)
-        .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+        .filter(|(u, _, _)| u.kind == UnitKind::Tower)
+        .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
         .collect()
 }
 
@@ -247,44 +248,33 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     v[111] = (timer.phase == MatchPhase::Drain) as u8 as f32;
     v[112] = timer.ticks_left as f32 / REGULAR_TICKS as f32;
 
-    // ===== 网格段：塔 =====
-    // 塔血按位置入格（王塔另有标记通道）；flip 时坐标取反
-    {
-        let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
-        for (t, h, k, tr) in q.iter(world) {
-            let (row, col) = grid_cell(tr.translation.x, tr.translation.z, flip);
-            let own = t.faction == own_faction;
-            let hp_ch = if own { CH_OWN_TOWER } else { CH_ENEMY_TOWER };
-            let king_ch = if own { CH_OWN_KING } else { CH_ENEMY_KING };
-            v[grid_idx(row, col, hp_ch)] = (h.current / h.max).clamp(0.0, 1.0);
-            if k.is_some() {
-                v[grid_idx(row, col, king_ch)] = 1.0;
-            }
-        }
-    }
-
-    // ===== 网格段：单位（按格计数，置换不变；建筑卡按卡种入格） =====
+    // ===== 网格段：单位（按格计数，置换不变；建筑卡按卡种入格，塔走专用通道） =====
     let mut total_counts = [0usize; 2];
     {
-        let mut q = world.query::<(&Monster, &Transform)>();
-        for (m, tr) in q.iter(world) {
+        let mut q = world.query::<(&Unit, &Health, Option<&KingTower>, &Transform)>();
+        for (u, h, k, tr) in q.iter(world) {
             let (row, col) = grid_cell(tr.translation.x, tr.translation.z, flip);
-            let own = m.faction == own_faction;
-            let ch = if own { CH_OWN_CARD } else { CH_ENEMY_CARD }
-                + (m.card as usize).min(CARDS.len() - 1);
-            v[grid_idx(row, col, ch)] += 1.0;
-            total_counts[own as usize] += 1;
-        }
-    }
-    {
-        let mut q = world.query::<(&BuildingCard, &Transform)>();
-        for (b, tr) in q.iter(world) {
-            let (row, col) = grid_cell(tr.translation.x, tr.translation.z, flip);
-            let own = b.faction == own_faction;
-            let ch = if own { CH_OWN_CARD } else { CH_ENEMY_CARD }
-                + (b.card as usize).min(CARDS.len() - 1);
-            v[grid_idx(row, col, ch)] += 1.0;
-            total_counts[own as usize] += 1;
+            let own = u.faction == own_faction;
+            match u.kind {
+                // 塔：塔血按位置入格（王塔另有标记通道）
+                UnitKind::Tower => {
+                    let hp_ch = if own { CH_OWN_TOWER } else { CH_ENEMY_TOWER };
+                    let king_ch = if own { CH_OWN_KING } else { CH_ENEMY_KING };
+                    v[grid_idx(row, col, hp_ch)] = (h.current / h.max).clamp(0.0, 1.0);
+                    if k.is_some() {
+                        v[grid_idx(row, col, king_ch)] = 1.0;
+                    }
+                }
+                // 部队/建筑卡：按卡种通道计数（total_counts 不含塔，维持 v4 语义）
+                UnitKind::Troop | UnitKind::Building => {
+                    let ch = if own { CH_OWN_CARD } else { CH_ENEMY_CARD }
+                        + u.card
+                            .expect("部队/建筑卡必有卡 id")
+                            .min(CARDS.len() as u8 - 1) as usize;
+                    v[grid_idx(row, col, ch)] += 1.0;
+                    total_counts[own as usize] += 1;
+                }
+            }
         }
     }
     // 计数归一化：每格每卡种最多计 4（野蛮人一张 4 只）
@@ -320,9 +310,9 @@ pub fn scripted_action(world: &mut World, faction: Faction) -> usize {
     let mut enemy_left_hp = f32::INFINITY;
     let mut enemy_right_hp = f32::INFINITY;
     {
-        let mut q = world.query::<(&Tower, &Health, Option<&KingTower>, &Transform)>();
-        for (t, h, k, tr) in q.iter(world) {
-            if t.faction == enemy && k.is_none() {
+        let mut q = world.query::<(&Unit, &Health, Option<&KingTower>, &Transform)>();
+        for (u, h, k, tr) in q.iter(world) {
+            if u.kind == UnitKind::Tower && u.faction == enemy && k.is_none() {
                 if tr.translation.x < 0.0 {
                     enemy_left_hp = h.current;
                 } else {
@@ -627,12 +617,15 @@ impl SimWorld {
         })
     }
 
-    /// 双方场上怪物数量 [blue, red]
+    /// 双方场上部队数量 [blue, red]（只数 Troop——建筑寿命自毁不该计入
+    /// 击杀交换 shaping）
     fn count_monsters(&mut self) -> [usize; 2] {
         let mut counts = [0usize; 2];
-        let mut q = self.app.world_mut().query::<&Monster>();
-        for m in q.iter(self.app.world()) {
-            counts[m.faction.index() as usize] += 1;
+        let mut q = self.app.world_mut().query::<&Unit>();
+        for u in q.iter(self.app.world()) {
+            if u.kind == UnitKind::Troop {
+                counts[u.faction.index() as usize] += 1;
+            }
         }
         counts
     }
@@ -642,9 +635,11 @@ impl SimWorld {
         let mut q = self
             .app
             .world_mut()
-            .query::<(&Tower, &Health)>();
-        for (t, h) in q.iter(self.app.world()) {
-            sums[t.faction.index() as usize] += h.current.max(0.0);
+            .query::<(&Unit, &Health)>();
+        for (u, h) in q.iter(self.app.world()) {
+            if u.kind == UnitKind::Tower {
+                sums[u.faction.index() as usize] += h.current.max(0.0);
+            }
         }
         sums
     }
@@ -807,9 +802,10 @@ impl SimWorld {
         let mut q = self
             .app
             .world_mut()
-            .query::<(&Tower, &Transform, Option<&KingTower>)>();
+            .query::<(&Unit, &Transform, Option<&KingTower>)>();
         q.iter(self.app.world())
-            .map(|(t, tr, k)| (t.faction, k.is_some(), tr.translation))
+            .filter(|(u, _, _)| u.kind == UnitKind::Tower)
+            .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
             .collect()
     }
 }
@@ -985,10 +981,13 @@ mod tests {
             let _ = w.world_mut().try_run_schedule(SimTick);
         }
         let world = w.world_mut();
-        let mut monsters = world.query::<&Monster>();
-        let n_monsters = monsters.iter(world).count();
-        let mut buildings = world.query::<&BuildingCard>();
-        let n_buildings = buildings.iter(world).count();
+        let mut troops = world.query_filtered::<&Unit, With<Mover>>();
+        let n_monsters = troops.iter(world).count();
+        let mut buildings = world.query::<&Unit>();
+        let n_buildings = buildings
+            .iter(world)
+            .filter(|u| u.kind == UnitKind::Building)
+            .count();
         assert_eq!(n_buildings, 1, "墓碑应落地为建筑实体");
         assert_eq!(n_monsters, 4, "王子 1 + 骷髅 3（箭雨瞬发不出实体）");
     }
@@ -1026,12 +1025,7 @@ mod tests {
                 let x = (next() % 1400) as f32 / 100.0 - 7.0;
                 let z = (next() % 2000) as f32 / 100.0 - 10.0;
                 world.spawn((
-                    Monster {
-                        faction,
-                        card: 0,
-                        radius: 0.5,
-                        mass: 1.0,
-                    },
+                    Unit::troop(faction, 0, 0.5, 1.0),
                     Attacker {
                         damage: 100.0,
                         attack_range: 0.75,
@@ -1063,7 +1057,7 @@ mod tests {
         let secs = t0.elapsed().as_secs_f32();
         let alive = {
             let world = w.world_mut();
-            let mut q = world.query::<&Monster>();
+            let mut q = world.query_filtered::<&Unit, With<Mover>>();
             q.iter(world).count()
         };
         println!(

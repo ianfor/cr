@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::components::{faction_color, Faction, Health, Tower};
+use crate::components::{faction_color, Faction, Health, Unit, UnitKind};
 use crate::constants::*;
 use crate::net::{NetClient, SimState};
 
@@ -82,8 +82,7 @@ pub fn tick_timer(
     mut commands: Commands,
     mut timer: ResMut<MatchTimer>,
     mut state: ResMut<SimState>,
-    mut towers: Query<(Entity, &Tower, &mut Health)>,
-    monsters: Query<(Entity, &crate::components::Monster)>,
+    mut units: Query<(Entity, &Unit, &mut Health)>,
     net: Option<Res<NetClient>>,
 ) {
     match timer.phase {
@@ -95,10 +94,12 @@ pub fn tick_timer(
             if timer.ticks_left == 0 {
                 // 比剩余塔数，多者直接获胜
                 let mut counts = (0u32, 0u32);
-                for (_, t, _) in towers.iter() {
-                    match t.faction {
-                        Faction::Player => counts.0 += 1,
-                        Faction::Enemy => counts.1 += 1,
+                for (_, u, _) in units.iter() {
+                    if u.kind == UnitKind::Tower {
+                        match u.faction {
+                            Faction::Player => counts.0 += 1,
+                            Faction::Enemy => counts.1 += 1,
+                        }
                     }
                 }
                 if counts.0 != counts.1 {
@@ -109,18 +110,14 @@ pub fn tick_timer(
                     };
                     info!("常规时间结束：{:?} 破塔数获胜", winner);
                     *state = SimState::GameOver(Some(winner));
-                    // 与猝死/爆塔一致：清除失败方所有单位
+                    // 与猝死/爆塔一致：清除失败方所有单位（塔/怪/建筑卡——
+                    // 旧版漏清建筑卡，与 check_game_over 不一致，v9 修正）
                     let loser = match winner {
                         Faction::Player => Faction::Enemy,
                         Faction::Enemy => Faction::Player,
                     };
-                    for (e, t, _) in &towers {
-                        if t.faction == loser {
-                            commands.entity(e).despawn();
-                        }
-                    }
-                    for (e, m) in &monsters {
-                        if m.faction == loser {
+                    for (e, u, _) in &units {
+                        if u.faction == loser {
                             commands.entity(e).despawn();
                         }
                     }
@@ -141,8 +138,10 @@ pub fn tick_timer(
             }
         }
         MatchPhase::Drain => {
-            for (_, _, mut hp) in &mut towers {
-                hp.current -= DRAIN_PER_TICK;
+            for (_, u, mut hp) in &mut units {
+                if u.kind == UnitKind::Tower {
+                    hp.current -= DRAIN_PER_TICK;
+                }
             }
         }
     }

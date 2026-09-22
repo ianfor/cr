@@ -161,18 +161,17 @@ impl SpatialGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::Faction;
+    use crate::components::{Faction, UnitKind};
     use crate::constants::{CardKind, CARDS};
 
     fn snap(i: usize, pos: Vec3, faction: Faction, flying: bool) -> UnitSnap {
         UnitSnap {
             entity: Entity::from_raw_u32(i as u32).unwrap(),
+            kind: UnitKind::Troop,
             faction,
             pos,
             radius: 0.5,
             mass: 1.0,
-            is_tower: false,
-            is_building: false,
             flying,
         }
     }

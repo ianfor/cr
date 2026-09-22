@@ -39,30 +39,15 @@ pub(crate) fn projectile_assets(
 /// 子弹追踪目标：命中扣血（可溅射），目标已死则子弹消失
 pub fn move_projectiles(
     mut commands: Commands,
-    mut projectiles: Query<(Entity, &Projectile, &mut Transform), Without<Monster>>,
-    monsters: Query<(Entity, &Transform, &Monster, Option<&Flying>), Without<Projectile>>,
-    towers: Query<(Entity, &Transform, &Tower), (Without<Monster>, Without<Projectile>)>,
-    buildings: Query<
-        (Entity, &Transform, &BuildingCard),
-        (Without<Monster>, Without<Projectile>),
-    >,
+    mut projectiles: Query<(Entity, &Projectile, &mut Transform), Without<Unit>>,
+    units: Query<(Entity, &Transform, &Unit, Option<&Flying>), Without<Projectile>>,
     mut healths: Query<&mut Health>,
 ) {
     for (e, proj, mut transform) in &mut projectiles {
-        // 查目标位置和半径：先怪物，后塔/建筑卡
-        let target = monsters
+        // 查目标位置和半径（怪/塔/建筑统一）
+        let target = units
             .get(proj.target)
-            .map(|(_, t, m, _)| (t.translation, m.radius))
-            .or_else(|_| {
-                towers
-                    .get(proj.target)
-                    .map(|(_, t, tw)| (t.translation, tw.radius))
-            })
-            .or_else(|_| {
-                buildings
-                    .get(proj.target)
-                    .map(|(_, t, b)| (t.translation, b.radius))
-            });
+            .map(|(_, t, u, _)| (t.translation, u.radius));
         let Ok((target_pos, target_radius)) = target else {
             commands.entity(e).despawn();
             continue;
@@ -74,31 +59,23 @@ pub fn move_projectiles(
             if let Ok(mut health) = healths.get_mut(proj.target) {
                 health.current -= proj.damage;
             }
-            // 溅射：以命中点为中心的范围伤害（对攻击方阵营的敌人）
+            // 溅射：以命中点为中心的范围伤害（对攻击方阵营的敌人）。
+            // 旧行为保留：弹体溅射只波及怪和建筑卡，塔不吃弹溅
             if proj.splash_radius > 0.0 {
-                for (me, mt, m, flying) in monsters.iter() {
-                    if m.faction == proj.attacker || me == proj.target {
+                for (ue, ut, u, flying) in units.iter() {
+                    if u.kind == UnitKind::Tower {
+                        continue; // 塔不吃弹溅
+                    }
+                    if u.faction == proj.attacker || ue == proj.target {
                         continue;
                     }
                     if flying.is_some() && !proj.hits_air {
                         continue; // 对地溅射打不到空军
                     }
-                    let mut d = mt.translation - target_pos;
+                    let mut d = ut.translation - target_pos;
                     d.y = 0.0;
-                    if d.length() <= proj.splash_radius + m.radius {
-                        if let Ok(mut health) = healths.get_mut(me) {
-                            health.current -= proj.damage;
-                        }
-                    }
-                }
-                for (be, bt, b) in buildings.iter() {
-                    if b.faction == proj.attacker || be == proj.target {
-                        continue;
-                    }
-                    let mut d = bt.translation - target_pos;
-                    d.y = 0.0;
-                    if d.length() <= proj.splash_radius + b.radius {
-                        if let Ok(mut health) = healths.get_mut(be) {
+                    if d.length() <= proj.splash_radius + u.radius {
+                        if let Ok(mut health) = healths.get_mut(ue) {
                             health.current -= proj.damage;
                         }
                     }

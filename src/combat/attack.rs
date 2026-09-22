@@ -22,18 +22,16 @@ pub fn attacking(
     mut units: Query<(
         &mut Attacker,
         &Transform,
+        &Unit,
         Option<&mut Charge>,
         Option<&Buffs>,
-        Option<&Monster>,
-        Option<&Tower>,
-        Option<&BuildingCard>,
     )>,
     mut healths: Query<&mut Health>,
     mut proj_assets: ResMut<ProjectileAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut attacker, transform, mut charge, buffs, monster, tower, building) in &mut units {
+    for (mut attacker, transform, unit, mut charge, buffs) in &mut units {
         // 禁攻击（眩晕/缴械）：实时查询 buff 标志位，无派生缓存
         if buffs.map(|b| b.channels().cannot_attack).unwrap_or(false) {
             continue;
@@ -47,16 +45,8 @@ pub fn attacking(
         };
         let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
-        let faction = monster
-            .map(|m| m.faction)
-            .or(tower.map(|t| t.faction))
-            .or(building.map(|b| b.faction))
-            .expect("攻击实体必为怪/塔/建筑之一");
-        let self_radius = monster
-            .map(|m| m.radius)
-            .or(tower.map(|t| t.radius))
-            .or(building.map(|b| b.radius))
-            .expect("攻击实体必为怪/塔/建筑之一");
+        let faction = unit.faction;
+        let self_radius = unit.radius;
 
         let edge = edge_dist(pos, self_radius, target.pos, target.radius);
         if edge > attacker.attack_range + 0.05 {
@@ -88,13 +78,11 @@ pub fn attacking(
             // 远程：发射追踪子弹（溅射参数随弹携带）
             let (mesh, mat) =
                 projectile_assets(&mut proj_assets, &mut meshes, &mut materials, faction);
-            // 弹道起点高度按实体类型：怪 1.5 / 塔 3.5 / 建筑 1.2
-            let muzzle_y = if monster.is_some() {
-                1.5
-            } else if tower.is_some() {
-                3.5
-            } else {
-                1.2
+            // 弹道起点高度按实体类别：怪 1.5 / 塔 3.5 / 建筑 1.2
+            let muzzle_y = match unit.kind {
+                UnitKind::Troop => 1.5,
+                UnitKind::Tower => 3.5,
+                UnitKind::Building => 1.2,
             };
             commands.spawn((
                 Projectile {

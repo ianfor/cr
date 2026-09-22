@@ -4,7 +4,7 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use crate::components::{
-    faction_color, Attacker, Faction, Health, KingTower, Targeting, TargetPolicy, Tower,
+    faction_color, Attacker, Faction, Health, KingTower, Targeting, TargetPolicy, Unit,
 };
 use crate::constants::*;
 use crate::health_bar;
@@ -182,10 +182,7 @@ fn spawn_tower(
     let roof_mat = materials.add(color.darker(0.15));
 
     let mut root = commands.spawn((
-        Tower {
-            faction,
-            radius: spec.body_radius,
-        },
+        Unit::tower(faction, spec.body_radius),
         // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统
         Attacker {
             damage: TOWER_ATTACK_DAMAGE,
