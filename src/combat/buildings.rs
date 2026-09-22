@@ -1,21 +1,12 @@
-//! 建筑卡通用能力：寿命倒计时自毁（Lifetime）、定时出兵（Spawner）。
-//! 建筑的攻击走统一 targeting/attacking（TargetPolicy::Guard + Attacker）
+//! 建筑卡通用能力：定时出兵（Spawner）。建筑的攻击走统一
+//! targeting/attacking（TargetPolicy::Guard + Attacker）；
+//! 寿命 = Decay 扣血 buff（components/cards），死亡走 despawn_dead 通用路径
 
 use bevy::prelude::*;
 
 use crate::cards;
 use crate::components::*;
 use crate::constants::*;
-
-/// 建筑寿命：归零自毁（不返圣水）
-pub fn building_lifetime(mut commands: Commands, mut buildings: Query<(Entity, &mut Lifetime)>) {
-    for (e, mut l) in &mut buildings {
-        l.secs -= TICK_DT;
-        if l.secs <= 0.0 {
-            commands.entity(e).despawn();
-        }
-    }
-}
 
 /// 出兵建筑（墓碑）：倒计时出一只 card_id 对应的小兵（在建筑位置直接落地，
 /// 不走虚影——出兵是建筑行为而非玩家指令）
@@ -51,9 +42,17 @@ pub fn building_spawner(
 #[cfg(test)]
 mod tests {
     use super::super::{
-        attacking, moving, seek, targeting, test_attacker, test_monster, WorldSnaps,
+        attacking, despawn_dead, moving, seek, status_effects, targeting, test_attacker,
+        test_monster, WorldSnaps,
     };
+    use crate::cards::decay_buff;
+    use crate::match_flow::MatchTimer;
     use super::*;
+
+    /// 测试用 Decay：寿命长到测试期内不死（只验证出兵/开火，不验证寿命）
+    fn long_decay() -> Buffs {
+        Buffs::new(decay_buff(800.0, 100.0))
+    }
 
     /// 墓碑定时出兵、加农炮索敌开火（统一索敌/开火系统的建筑侧验证）
     #[test]
@@ -62,13 +61,14 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<super::super::ProjectileAssets>()
-            .init_resource::<WorldSnaps>();
+            .init_resource::<WorldSnaps>()
+            .init_resource::<MatchTimer>();
         let world = app.world_mut();
 
         // 墓碑：4s 一只骷髅（card 1）
         world.spawn((
             Unit::building(Faction::Player, 20, 0.6),
-            Lifetime { secs: 100.0 },
+            long_decay(),
             Spawner {
                 interval: 4.0,
                 card_id: 1,
@@ -80,7 +80,7 @@ mod tests {
         // 加农炮：0.9s 一发，打不到空军
         world.spawn((
             Unit::building(Faction::Enemy, 19, 0.6),
-            Lifetime { secs: 100.0 },
+            long_decay(),
             Attacker {
                 damage: 90.0,
                 attack_range: 5.0,
@@ -108,11 +108,12 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((
+            status_effects,
             targeting,
             attacking,
             moving,
-            building_lifetime,
             building_spawner,
+            despawn_dead,
         )
             .chain());
         for _ in 0..125 {
@@ -134,20 +135,22 @@ mod tests {
         assert!(fired > 0, "加农炮必须对射程内敌人开火");
     }
 
-    /// 建筑寿命：归零自毁
+    /// 建筑寿命（Decay buff）：总掉血 = hp，寿命尽恰好归零，
+    /// 走 despawn_dead 通用死亡路径
     #[test]
     fn building_expires_after_lifetime() {
         let mut app = App::new();
+        app.init_resource::<MatchTimer>();
         let world = app.world_mut();
         world.spawn((
             Unit::building(Faction::Player, 19, 0.6),
-            Lifetime { secs: 1.0 },
+            Buffs::new(decay_buff(1400.0, 1.0)),
             Health::new(1400.0),
             Transform::from_xyz(0.0, 0.7, -5.0),
         ));
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(building_lifetime);
+        schedule.add_systems((status_effects, despawn_dead).chain());
         for _ in 0..35 {
             schedule.run(world); // 1.17s > 1.0s 寿命
         }
@@ -159,6 +162,39 @@ mod tests {
                 .count(),
             0,
             "寿命到必须自毁"
+        );
+    }
+
+    /// Decay 末跳回归：先 drain 后 tick——最后一跳必须落上。
+    /// 反序（先 tick 清容器）末跳 drain 会随容器蒸发，建筑剩 1/30 血永生；
+    /// 另一坑是 FP 欠扣（见 decay_buff 的 0.1% 放大兜底注释）
+    #[test]
+    fn decay_last_tick_drains_fully() {
+        let mut app = App::new();
+        app.init_resource::<MatchTimer>();
+        let world = app.world_mut();
+        let e = world
+            .spawn((
+                Unit::building(Faction::Player, 19, 0.6),
+                Buffs::new(decay_buff(300.0, 1.0)),
+                Health::new(300.0),
+                Transform::from_xyz(0.0, 0.7, -5.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((status_effects, despawn_dead).chain());
+        for _ in 0..29 {
+            schedule.run(world); // 29/30 tick：还差最后一跳
+        }
+        assert!(
+            world.get::<Health>(e).is_some(),
+            "29 tick（寿命 1s）建筑必须还在"
+        );
+        schedule.run(world); // 第 30 tick：末跳 drain 与容器过期同帧
+        assert!(
+            world.get::<Health>(e).is_none(),
+            "30 tick 恰好归零并 despawn（末跳 drain 不得丢失）"
         );
     }
 }

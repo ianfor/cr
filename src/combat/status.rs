@@ -9,8 +9,21 @@ use bevy::prelude::*;
 use crate::components::*;
 use crate::constants::*;
 
-pub fn status_effects(mut commands: Commands, mut buffed: Query<(Entity, &mut Buffs)>) {
-    for (e, mut buffs) in &mut buffed {
+/// buff 生命周期 + 持续生命增减（DoT/HoT/建筑衰减）。
+/// 顺序铁律：**先 drain 后 tick**——反过来最后一跳会随容器一起被清掉，
+/// 建筑会剩一丝血"永生"（hp 永远到不了 0，despawn_dead 不触发）
+pub fn status_effects(
+    mut commands: Commands,
+    mut buffed: Query<(Entity, &mut Buffs, Option<&mut Health>)>,
+) {
+    for (e, mut buffs, health) in &mut buffed {
+        let drain = buffs.drain_per_sec();
+        if drain != 0.0 {
+            // ≠0 才写，避免无谓触发 Changed<Health>
+            if let Some(mut hp) = health {
+                hp.current += drain * TICK_DT;
+            }
+        }
         // 倒计时、过期、标志缓存维护都内聚在 Buffs::tick；
         // 清空后删容器，消费方的 Option<&Buffs> 回到 None
         if buffs.tick(TICK_DT) {
@@ -31,6 +44,7 @@ mod tests {
             stacks: 1,
             policy: StackPolicy::Longer,
             flags: CCFlags::STUN,
+            hp_per_sec: 0.0,
             effects: vec![],
         }
     }
@@ -128,6 +142,7 @@ mod tests {
             stacks: 1,
             policy: StackPolicy::Refresh,
             flags: CCFlags::NONE,
+            hp_per_sec: 0.0,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
                 op: Op::Pct,
@@ -141,6 +156,7 @@ mod tests {
             stacks: 1,
             policy: StackPolicy::Refresh,
             flags: CCFlags::NONE,
+            hp_per_sec: 0.0,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
                 op: Op::Add,
@@ -154,6 +170,7 @@ mod tests {
             stacks: 1,
             policy: StackPolicy::Refresh,
             flags: CCFlags::NONE,
+            hp_per_sec: 0.0,
             effects: vec![StatMod {
                 stat: StatKind::MoveSpeed,
                 op: Op::FlatAdd,
@@ -180,6 +197,7 @@ mod tests {
             stacks: 1,
             policy,
             flags: CCFlags::NONE,
+            hp_per_sec: 0.0,
             effects: vec![StatMod {
                 stat: StatKind::AttackSpeed,
                 op: Op::Pct,
@@ -238,6 +256,7 @@ mod tests {
                         stacks: 1,
                         policy: StackPolicy::Refresh,
                         flags: CCFlags::NONE,
+                        hp_per_sec: 0.0,
                         effects: vec![
                             StatMod {
                                 stat: StatKind::MoveSpeed,

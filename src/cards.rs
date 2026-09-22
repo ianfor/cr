@@ -263,6 +263,7 @@ pub fn play_card(
                             stacks: 1,
                             policy: StackPolicy::Refresh,
                             flags: CCFlags::NONE,
+                            hp_per_sec: 0.0,
                             effects: vec![
                                 StatMod {
                                     stat: StatKind::MoveSpeed,
@@ -293,6 +294,7 @@ pub fn play_card(
                             stacks: 1,
                             policy: StackPolicy::Longer,
                             flags: CCFlags::STUN,
+                            hp_per_sec: 0.0,
                             effects: vec![],
                         };
                         match buffs.as_mut() {
@@ -488,8 +490,22 @@ pub fn spawn_unit(
 /// 建筑卡实体的碰撞半径（加农炮/墓碑共用小方块）
 pub const BUILDING_RADIUS: f32 = 0.6;
 
+/// 建筑衰减 buff：寿命 = 持续扣血，总掉血 = hp，寿命尽恰好归零。
+/// 速率 0.1% 放大兜底：纯 rate×dt 累加的 FP 残差可能欠扣（~几个 ULP），
+/// 欠扣时残血建筑在 buff 过期后永生；放大后累计必超总血，至多提前
+/// 0.1% 寿命归零（FP 累加误差 ~1e-6 相对量，裕量 500 倍），两端同算无失同步
+pub fn decay_buff(hp: f32, lifetime_secs: f32) -> ActiveBuff {
+    ActiveBuff {
+        name: "Decay",
+        secs: lifetime_secs,
+        hp_per_sec: -hp / lifetime_secs * 1.001,
+        ..Default::default()
+    }
+}
+
 /// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，
-/// 攻击/出兵/寿命分别由 Attacker/Spawner/Lifetime 能力组件表达）
+/// 攻击/出兵/寿命分别由 Attacker/Spawner/Decay buff 表达；
+/// 寿命尽头走 despawn_dead 通用死亡路径）
 fn spawn_building(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -502,9 +518,7 @@ fn spawn_building(
     let r = BUILDING_RADIUS;
     let mut e = commands.spawn((
         Unit::building(faction, card, r),
-        Lifetime {
-            secs: spec.lifetime_secs,
-        },
+        Buffs::new(decay_buff(spec.hp, spec.lifetime_secs)),
         Targeting(TargetPolicy::Guard),
         Health::new(spec.hp),
         Mesh3d(meshes.add(Cuboid::new(2.0 * r, 1.4, 2.0 * r))),

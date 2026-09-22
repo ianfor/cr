@@ -304,7 +304,9 @@ pub enum StackPolicy {
 }
 
 /// 一个活跃 buff 实例：属性修饰（effects）+ 控制标志（flags）+ 生命周期。
-/// 如"狂暴"= 两条 StatMod；"晕眩"= 一个 STUN 标志位，无属性修饰
+/// 如"狂暴"= 两条 StatMod；"晕眩"= 一个 STUN 标志位，无属性修饰；
+/// "建筑衰减"= hp_per_sec 持续扣血（负 = DoT 正 = HoT）
+#[derive(Clone)]
 pub struct ActiveBuff {
     /// 同名 = 同种 buff（替换/叠层判定）
     pub name: &'static str,
@@ -316,6 +318,23 @@ pub struct ActiveBuff {
     /// 控制标志位（晕眩/将来的定身/沉默）
     pub flags: CCFlags,
     pub effects: Vec<StatMod>,
+    /// 每秒生命增减（负=持续伤害，正=持续回复）；
+    /// 跨 buff 直接相加，不参与 StackPolicy 层叠
+    pub hp_per_sec: f32,
+}
+
+impl Default for ActiveBuff {
+    fn default() -> Self {
+        ActiveBuff {
+            name: "",
+            secs: 0.0,
+            stacks: 1,
+            policy: StackPolicy::Refresh,
+            flags: CCFlags::NONE,
+            effects: vec![],
+            hp_per_sec: 0.0,
+        }
+    }
 }
 
 /// buff 容器：每单位一个（懒插入——没 buff 就没组件）。
@@ -330,6 +349,8 @@ pub struct Buffs {
     cc: CCFlags,
     /// 属性合成缓存
     stats: StatFold,
+    /// 每秒生命增减缓存（Σ hp_per_sec，跨 buff 相加、不参与层叠）
+    drain: f32,
 }
 
 impl Buffs {
@@ -344,6 +365,7 @@ impl Buffs {
     /// 重算全部派生缓存（仅变更点调用：apply / 过期 / 构造）
     fn recompute(&mut self) {
         self.cc = CCFlags::union(self.list.iter().map(|b| b.flags));
+        self.drain = self.list.iter().map(|b| b.hp_per_sec).sum();
         let mut fold = StatFold::default();
         for b in &self.list {
             for e in &b.effects {
@@ -419,12 +441,12 @@ impl Buffs {
         let [add, mul, flat] = self.stats.0[kind.index()];
         (base + add) * mul + flat
     }
-}
 
-/// 建筑寿命：归零自毁（不返圣水）
-#[derive(Component)]
-pub struct Lifetime {
-    pub secs: f32,
+    /// 每秒生命增减（读缓存，不遍历）：负 = 持续掉血（建筑衰减/毒），
+    /// 正 = 持续回复。status_effects 消费
+    pub fn drain_per_sec(&self) -> f32 {
+        self.drain
+    }
 }
 
 /// 出兵建筑（墓碑）：每 interval 秒在自身位置出一只 card_id 对应的小兵

@@ -452,7 +452,6 @@ impl SimWorld {
                         combat::targeting,
                         combat::attacking,
                         combat::moving,
-                        combat::building_lifetime,
                         combat::building_spawner,
                     )
                         .chain(),

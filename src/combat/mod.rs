@@ -23,7 +23,7 @@ mod status;
 mod targeting;
 
 pub use attack::attacking;
-pub use buildings::{building_lifetime, building_spawner};
+pub use buildings::building_spawner;
 pub use movement::moving;
 pub use physics::{keep_out_of_river, separate_monsters, separate_from_statics};
 pub use projectile::{move_projectiles, ProjectileAssets};
