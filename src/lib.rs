@@ -144,13 +144,15 @@ pub fn run_app() {
     .add_systems(Update, bot::bot_think)
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
-    // 法术施法特效（纯表现层；万箭箭矢的落点时刻与波结算帧对齐）
+    // 法术施法特效（纯表现层；万箭箭矢的落点时刻与波结算帧对齐，
+    // 落点危险圈与 SpellVolley 实体同生命周期）
     .add_systems(
         Update,
         (
             combat::spell_fx_spawn,
             combat::spell_fx_update,
             combat::spell_arrows_fly,
+            combat::spell_volley_indicator,
         )
             .chain(),
     )
