@@ -168,10 +168,10 @@ pub fn elixir_of(world: &mut World, faction: Faction) -> f32 {
 
 /// 塔快照 (faction, is_king, pos)
 pub fn tower_snaps(world: &mut World) -> Vec<(Faction, bool, Vec3)> {
-    let mut q = world.query::<(&Unit, &Transform, Option<&KingTower>)>();
+    let mut q = world.query::<(&Unit, &Transform)>();
     q.iter(world)
-        .filter(|(u, _, _)| u.kind == UnitKind::Tower)
-        .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
+        .filter(|(u, _)| u.kind.is_tower())
+        .map(|(u, tr)| (u.faction, u.kind == UnitKind::KingTower, tr.translation))
         .collect()
 }
 
@@ -251,17 +251,17 @@ pub fn compute_obs(world: &mut World, flip: bool) -> Vec<f32> {
     // ===== 网格段：单位（按格计数，置换不变；建筑卡按卡种入格，塔走专用通道） =====
     let mut total_counts = [0usize; 2];
     {
-        let mut q = world.query::<(&Unit, &Health, Option<&KingTower>, &Transform)>();
-        for (u, h, k, tr) in q.iter(world) {
+        let mut q = world.query::<(&Unit, &Health, &Transform)>();
+        for (u, h, tr) in q.iter(world) {
             let (row, col) = grid_cell(tr.translation.x, tr.translation.z, flip);
             let own = u.faction == own_faction;
             match u.kind {
                 // 塔：塔血按位置入格（王塔另有标记通道）
-                UnitKind::Tower => {
+                UnitKind::Tower | UnitKind::KingTower => {
                     let hp_ch = if own { CH_OWN_TOWER } else { CH_ENEMY_TOWER };
                     let king_ch = if own { CH_OWN_KING } else { CH_ENEMY_KING };
                     v[grid_idx(row, col, hp_ch)] = (h.current / h.max).clamp(0.0, 1.0);
-                    if k.is_some() {
+                    if u.kind == UnitKind::KingTower {
                         v[grid_idx(row, col, king_ch)] = 1.0;
                     }
                 }
@@ -310,9 +310,10 @@ pub fn scripted_action(world: &mut World, faction: Faction) -> usize {
     let mut enemy_left_hp = f32::INFINITY;
     let mut enemy_right_hp = f32::INFINITY;
     {
-        let mut q = world.query::<(&Unit, &Health, Option<&KingTower>, &Transform)>();
-        for (u, h, k, tr) in q.iter(world) {
-            if u.kind == UnitKind::Tower && u.faction == enemy && k.is_none() {
+        let mut q = world.query::<(&Unit, &Health, &Transform)>();
+        for (u, h, tr) in q.iter(world) {
+            // 仅公主塔（王塔不在桥位，不参与弱侧判定）
+            if u.kind == UnitKind::Tower && u.faction == enemy {
                 if tr.translation.x < 0.0 {
                     enemy_left_hp = h.current;
                 } else {
@@ -637,7 +638,7 @@ impl SimWorld {
             .world_mut()
             .query::<(&Unit, &Health)>();
         for (u, h) in q.iter(self.app.world()) {
-            if u.kind == UnitKind::Tower {
+            if u.kind.is_tower() {
                 sums[u.faction.index() as usize] += h.current.max(0.0);
             }
         }
@@ -802,10 +803,10 @@ impl SimWorld {
         let mut q = self
             .app
             .world_mut()
-            .query::<(&Unit, &Transform, Option<&KingTower>)>();
+            .query::<(&Unit, &Transform)>();
         q.iter(self.app.world())
-            .filter(|(u, _, _)| u.kind == UnitKind::Tower)
-            .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
+            .filter(|(u, _)| u.kind.is_tower())
+            .map(|(u, tr)| (u.faction, u.kind == UnitKind::KingTower, tr.translation))
             .collect()
     }
 }

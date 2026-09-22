@@ -245,7 +245,7 @@ pub fn play_card(
                 return;
             }
             for (e, u, mut hp, tr, mut buffs) in spell_targets.iter_mut() {
-                if u.kind == UnitKind::Tower {
+                if u.kind.is_tower() {
                     continue; // 塔不吃法术
                 }
                 let target_faction = u.faction;
@@ -328,7 +328,7 @@ pub fn spell_volley_tick(
         }
         let pos = Vec3::new(v.x, 0.0, v.z);
         for (u, mut hp, tr) in targets.iter_mut() {
-            if u.kind == UnitKind::Tower {
+            if u.kind.is_tower() {
                 continue; // 塔不吃法术（与瞬发分支一致）
             }
             if u.faction == v.faction {

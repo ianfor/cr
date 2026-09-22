@@ -42,20 +42,33 @@ pub fn faction_color(faction: Faction) -> Color {
 pub enum UnitKind {
     /// 部队（可移动、参与推挤）
     Troop,
-    /// 塔（公主塔/国王塔，KingTower marker 另挂）
+    /// 公主塔
     Tower,
+    /// 国王塔（被摧毁即输掉对局）
+    KingTower,
     /// 建筑卡（加农炮/墓碑，原地守卫、有寿命）
     Building,
 }
 
 impl UnitKind {
-    /// 类间稳定排序键（快照确定性契约：怪→塔→建筑）
+    /// 类间稳定排序键（快照确定性契约：怪→塔→建筑）。
+    /// 王塔与公主塔同为 1：保旧"塔 query"拼接序与 send_hash 哈希中立
     pub fn rank(self) -> u8 {
         match self {
             UnitKind::Troop => 0,
-            UnitKind::Tower => 1,
+            UnitKind::Tower | UnitKind::KingTower => 1,
             UnitKind::Building => 2,
         }
+    }
+
+    /// 是否塔（公主塔或国王塔）——旧 `kind == Tower` 过滤点大多指此语义
+    pub fn is_tower(self) -> bool {
+        matches!(self, UnitKind::Tower | UnitKind::KingTower)
+    }
+
+    /// 是否建筑类目标（塔/王塔/建筑卡）。王塔必须算：巨人/野猪要打王塔
+    pub fn is_building_kind(self) -> bool {
+        matches!(self, UnitKind::Tower | UnitKind::KingTower | UnitKind::Building)
     }
 }
 
@@ -83,12 +96,11 @@ impl Unit {
     pub fn tower(faction: Faction, radius: f32) -> Self {
         Self { kind: UnitKind::Tower, faction, card: None, radius, mass: 0.0 }
     }
+    pub fn king(faction: Faction, radius: f32) -> Self {
+        Self { kind: UnitKind::KingTower, faction, card: None, radius, mass: 0.0 }
+    }
     pub fn building(faction: Faction, card: u8, radius: f32) -> Self {
         Self { kind: UnitKind::Building, faction, card: Some(card), radius, mass: 0.0 }
-    }
-    /// 是否建筑类目标（塔或建筑卡）
-    pub fn is_building_kind(&self) -> bool {
-        matches!(self.kind, UnitKind::Tower | UnitKind::Building)
     }
 }
 
@@ -423,10 +435,6 @@ pub struct Spawner {
     /// 出兵倒计时（秒）
     pub cooldown: f32,
 }
-
-/// 国王塔标记（被摧毁即输掉对局）
-#[derive(Component)]
-pub struct KingTower;
 
 /// 多段法术（waves > 1，万箭齐发）：分波延迟结算的范围伤害实体。
 /// 时间表（constants.rs 的 SPELL_WAVE_FIRST_TICKS / INTERVAL_TICKS）

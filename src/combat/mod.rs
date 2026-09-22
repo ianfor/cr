@@ -57,9 +57,9 @@ pub(crate) struct UnitSnap {
 }
 
 impl UnitSnap {
-    /// 是否建筑类目标（塔或建筑卡）
+    /// 是否建筑类目标（塔或建筑卡；王塔在内——巨人/野猪的索敌目标）
     pub(crate) fn is_building_kind(&self) -> bool {
-        matches!(self.kind, UnitKind::Tower | UnitKind::Building)
+        self.kind.is_building_kind()
     }
 }
 
@@ -109,7 +109,7 @@ pub fn gather_input(
     decks: Res<Decks>,
     selected: Res<SelectedCard>,
     buttons: Query<&Interaction, With<Button>>,
-    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Unit, &Transform)>,
     bot_mode: Option<Res<BotMode>>,
     mut pending: ResMut<PendingClicks>,
     net: Option<Res<NetClient>>,
@@ -169,8 +169,8 @@ pub fn gather_input(
     if net.is_some() || bot_mode.is_some() {
         let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
             .iter()
-            .filter(|(u, _, _)| u.kind == UnitKind::Tower)
-            .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
+            .filter(|(u, _)| u.kind.is_tower())
+            .map(|(u, tr)| (u.faction, u.kind == UnitKind::KingTower, tr.translation))
             .collect();
         if !cards::deploy_zone_ok(&CARDS[card as usize], faction, point, &tower_snaps) {
             return; // 区域不可部署：无效操作
@@ -218,7 +218,7 @@ pub fn apply_commands(
     mut log: ResMut<CommandLog>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Unit, &Transform)>,
     mut spell_targets: Query<(
         Entity,
         &Unit,
@@ -230,8 +230,8 @@ pub fn apply_commands(
     // 部署区域判定用的塔快照（faction, is_king, pos）
     let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
         .iter()
-        .filter(|(u, _, _)| u.kind == UnitKind::Tower)
-        .map(|(u, tr, k)| (u.faction, k.is_some(), tr.translation))
+        .filter(|(u, _)| u.kind.is_tower())
+        .map(|(u, tr)| (u.faction, u.kind == UnitKind::KingTower, tr.translation))
         .collect();
 
     let mut exec: Vec<GameCommand> = buffer.local.remove(&tick.0).unwrap_or_default();
@@ -279,7 +279,7 @@ pub fn check_game_over(
     mut commands: Commands,
     mut state: ResMut<net::SimState>,
     timer: Res<crate::match_flow::MatchTimer>,
-    units: Query<(Entity, &Unit, &Health, Option<&KingTower>)>,
+    units: Query<(Entity, &Unit, &Health)>,
     net: Option<Res<NetClient>>,
 ) {
     use crate::match_flow::MatchPhase;
@@ -306,16 +306,16 @@ pub fn check_game_over(
     // 返回值：None = 对局继续；Some(None) = 平局；Some(Some(w)) = w 胜
     let outcome: Option<Option<Faction>> = if let Some(loser) = units
         .iter()
-        .find(|(_, _, hp, k)| k.is_some() && hp.current <= 0.0)
-        .map(|(_, u, _, _)| u.faction)
+        .find(|(_, u, hp)| u.kind == UnitKind::KingTower && hp.current <= 0.0)
+        .map(|(_, u, _)| u.faction)
     {
         Some(Some(other(loser)))
     } else if matches!(timer.phase, MatchPhase::Overtime | MatchPhase::Drain) {
         let mut dead = (false, false);
-        for (_, u, hp, _) in &units {
+        for (_, u, hp) in &units {
             // 只看塔（含王塔——王塔已死会先进上面的分支）：
             // 加时拆掉建筑卡不算猝死
-            if u.kind == UnitKind::Tower && hp.current <= 0.0 {
+            if u.kind.is_tower() && hp.current <= 0.0 {
                 match u.faction {
                     Faction::Player => dead.0 = true,
                     Faction::Enemy => dead.1 = true,
@@ -341,7 +341,7 @@ pub fn check_game_over(
     // 清除失败方所有单位（塔/怪/建筑卡；平局则双方保留）
     if let Some(winner) = result {
         let loser = other(winner);
-        for (e, u, _, _) in &units {
+        for (e, u, _) in &units {
             if u.faction == loser {
                 commands.entity(e).despawn();
             }
@@ -359,14 +359,19 @@ pub fn check_game_over(
 pub fn despawn_dead(
     mut commands: Commands,
     timer: Res<crate::match_flow::MatchTimer>,
-    units: Query<(Entity, &Health, &Unit), (Changed<Health>, Without<KingTower>)>,
+    units: Query<(Entity, &Health, &Unit), Changed<Health>>,
 ) {
     use crate::match_flow::MatchPhase;
 
     let sudden_death_phase = matches!(timer.phase, MatchPhase::Overtime | MatchPhase::Drain);
     for (e, h, u) in &units {
         if h.current <= 0.0 {
-            if u.kind == UnitKind::Tower && sudden_death_phase {
+            // 王塔永远不归这里管（check_game_over 处理）
+            if u.kind == UnitKind::KingTower {
+                continue;
+            }
+            // 加时/拼血阶段的塔也不归这里管（留给 check_game_over 判定猝死）
+            if u.kind.is_tower() && sudden_death_phase {
                 continue;
             }
             commands.entity(e).despawn();
@@ -429,7 +434,7 @@ pub fn spell_fx_spawn(
     mut cursor: Local<usize>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    towers: Query<(&Unit, &Transform, Option<&KingTower>)>,
+    towers: Query<(&Unit, &Transform)>,
 ) {
     // 世界重置后日志清空：cursor 回退到 0 重新跟（seek 回退重追时特效会重放，无害）
     if *cursor > log.0.len() {
@@ -484,10 +489,8 @@ pub fn spell_fx_spawn(
                 // 本波箭矢：从施法方王塔顶射出（王塔已毁则跳过，对局将终）
                 let Some(king_top) = towers
                     .iter()
-                    .find(|(u, _, k)| {
-                        u.kind == UnitKind::Tower && k.is_some() && u.faction == faction
-                    })
-                    .map(|(_, tr, _)| tr.translation + Vec3::Y * 4.2)
+                    .find(|(u, _)| u.kind == UnitKind::KingTower && u.faction == faction)
+                    .map(|(_, tr)| tr.translation + Vec3::Y * 4.2)
                 else {
                     continue;
                 };
@@ -680,8 +683,13 @@ mod tests {
     use crate::net::SimState;
 
     fn spawn_tower(world: &mut World, faction: Faction, king: bool, hp: f32) {
-        let mut e = world.spawn((
-            Unit::tower(faction, 1.2),
+        let unit = if king {
+            Unit::king(faction, 1.2)
+        } else {
+            Unit::tower(faction, 1.2)
+        };
+        world.spawn((
+            unit,
             Attacker {
                 damage: TOWER_ATTACK_DAMAGE,
                 attack_range: 6.0,
@@ -699,9 +707,6 @@ mod tests {
                 max: 100.0,
             },
         ));
-        if king {
-            e.insert(KingTower);
-        }
     }
 
     fn spawn_monster(world: &mut World, faction: Faction) {
@@ -740,7 +745,7 @@ mod tests {
         // 蓝方（失败方）塔和怪都被清除
         let mut towers = world.query::<&Unit>();
         assert_eq!(
-            towers.iter(world).filter(|u| u.kind == UnitKind::Tower).count(),
+            towers.iter(world).filter(|u| u.kind.is_tower()).count(),
             0
         );
         let mut monsters = world.query_filtered::<&Unit, With<Mover>>();
@@ -789,7 +794,7 @@ mod tests {
         ));
         let mut towers = world.query::<&Unit>();
         assert_eq!(
-            towers.iter(world).filter(|u| u.kind == UnitKind::Tower).count(),
+            towers.iter(world).filter(|u| u.kind.is_tower()).count(),
             0
         );
     }

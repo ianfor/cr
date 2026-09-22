@@ -4,7 +4,7 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use crate::components::{
-    faction_color, Attacker, Faction, Health, KingTower, Targeting, TargetPolicy, Unit,
+    faction_color, Attacker, Faction, Health, Targeting, TargetPolicy, Unit,
 };
 use crate::constants::*;
 use crate::health_bar;
@@ -181,8 +181,14 @@ fn spawn_tower(
     let body_mat = materials.add(color);
     let roof_mat = materials.add(color.darker(0.15));
 
+    // 王塔/公主塔用 kind 区分（王塔被毁即判负）
+    let unit = if spec.is_king {
+        Unit::king(faction, spec.body_radius)
+    } else {
+        Unit::tower(faction, spec.body_radius)
+    };
     let mut root = commands.spawn((
-        Unit::tower(faction, spec.body_radius),
+        unit,
         // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统
         Attacker {
             damage: TOWER_ATTACK_DAMAGE,
@@ -199,9 +205,6 @@ fn spawn_tower(
         Health::new(spec.hp),
         Transform::from_translation(position),
     ));
-    if spec.is_king {
-        root.insert(KingTower);
-    }
     root.with_children(|p| {
         // 塔身
         p.spawn((

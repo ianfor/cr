@@ -63,7 +63,7 @@ pub fn move_projectiles(
             // 旧行为保留：弹体溅射只波及怪和建筑卡，塔不吃弹溅
             if proj.splash_radius > 0.0 {
                 for (ue, ut, u, flying) in units.iter() {
-                    if u.kind == UnitKind::Tower {
+                    if u.kind.is_tower() {
                         continue; // 塔不吃弹溅
                     }
                     if u.faction == proj.attacker || ue == proj.target {

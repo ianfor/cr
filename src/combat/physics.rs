@@ -110,7 +110,7 @@ pub fn separate_from_statics(
         // 两遍扫描：先塔后建筑——保持旧"塔 query 全部 → 建筑 query 全部"
         // 的推动顺序（多个重叠圆的连续 push_out 结果与顺序相关，不可变序）
         for (s, st) in &statics {
-            if s.kind == UnitKind::Tower {
+            if s.kind.is_tower() {
                 push_out(&mut transform, m.radius, st.translation, s.radius);
             }
         }

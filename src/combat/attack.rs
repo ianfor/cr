@@ -78,10 +78,10 @@ pub fn attacking(
             // 远程：发射追踪子弹（溅射参数随弹携带）
             let (mesh, mat) =
                 projectile_assets(&mut proj_assets, &mut meshes, &mut materials, faction);
-            // 弹道起点高度按实体类别：怪 1.5 / 塔 3.5 / 建筑 1.2
+            // 弹道起点高度按实体类别：怪 1.5 / 塔（含王塔）3.5 / 建筑 1.2
             let muzzle_y = match unit.kind {
                 UnitKind::Troop => 1.5,
-                UnitKind::Tower => 3.5,
+                UnitKind::Tower | UnitKind::KingTower => 3.5,
                 UnitKind::Building => 1.2,
             };
             commands.spawn((

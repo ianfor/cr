@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::components::{faction_color, Faction, Health, Unit, UnitKind};
+use crate::components::{faction_color, Faction, Health, Unit};
 use crate::constants::*;
 use crate::net::{NetClient, SimState};
 
@@ -95,7 +95,7 @@ pub fn tick_timer(
                 // 比剩余塔数，多者直接获胜
                 let mut counts = (0u32, 0u32);
                 for (_, u, _) in units.iter() {
-                    if u.kind == UnitKind::Tower {
+                    if u.kind.is_tower() {
                         match u.faction {
                             Faction::Player => counts.0 += 1,
                             Faction::Enemy => counts.1 += 1,
@@ -139,7 +139,7 @@ pub fn tick_timer(
         }
         MatchPhase::Drain => {
             for (_, u, mut hp) in &mut units {
-                if u.kind == UnitKind::Tower {
+                if u.kind.is_tower() {
                     hp.current -= DRAIN_PER_TICK;
                 }
             }
