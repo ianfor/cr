@@ -1,7 +1,8 @@
 //! 部署区域可视化：可放区（绿）与不可放区（红）半透明覆盖层，
-//! 以及法术卡的施法范围指示圈（选中时贴鼠标位置）。
+//! 以及法术卡的施法范围指示圈（选中时用 Gizmos 在鼠标落点画圆）。
 //! 表现层：只读模拟状态，不影响帧同步
 
+use bevy::gizmos::prelude::{DefaultGizmoConfigGroup, GizmoConfigStore, Gizmos};
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
@@ -15,10 +16,6 @@ use crate::net::{NetClient, SimState};
 pub struct DeployZone {
     kind: ZoneKind,
 }
-
-/// 法术施法范围指示圈：选中法术卡时贴鼠标位置显示作用半径
-#[derive(Component)]
-pub struct SpellRangeIndicator;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ZoneKind {
@@ -37,7 +34,11 @@ pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut gizmo_config: ResMut<GizmoConfigStore>,
 ) {
+    // 指示圈线宽加粗一点（默认太细，540p 窗口下看不清）
+    let (config, _) = gizmo_config.config_mut::<DefaultGizmoConfigGroup>();
+    config.line.width = 3.0;
     let plane = meshes.add(Plane3d::default().mesh().size(1.0, 1.0));
     let green = materials.add(StandardMaterial {
         base_color: Color::srgba(0.2, 0.85, 0.35, 0.3),
@@ -67,24 +68,6 @@ pub fn setup(
             NotShadowCaster,
         ));
     }
-
-    // 法术范围指示圈：半径 1 的圆环，按法术半径缩放（x/z 缩放，环厚度随半径略变）
-    let ring = meshes.add(bevy::math::primitives::Torus::new(0.95, 1.05));
-    let ring_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.95, 0.6, 0.85),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
-    commands.spawn((
-        SpellRangeIndicator,
-        Mesh3d(ring),
-        MeshMaterial3d(ring_mat),
-        Transform::from_xyz(0.0, 0.1, 0.0)
-            .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-        Visibility::Hidden,
-        NotShadowCaster,
-    ));
 }
 
 /// 每帧按本方阵营与塔存活状态刷新区域显示
@@ -171,7 +154,8 @@ pub fn update(
     }
 }
 
-/// 法术施法范围指示圈：选中法术卡时贴鼠标位置显示作用半径（纯表现层）。
+/// 法术施法范围指示圈：选中法术卡时用 Gizmos 在鼠标落点画半径圆（纯表现层）。
+/// 即时模式——不画即隐藏，无常驻实体/可见性/缩放管理。
 /// 阵营判定与 gather_input 同规则——联网取己方、PvE 锁蓝方、
 /// 单机按悬停半场（指示的就是"此刻点击会放出的牌"）
 pub fn spell_range_update(
@@ -182,28 +166,19 @@ pub fn spell_range_update(
     camera: Single<(&Camera, &GlobalTransform)>,
     decks: Res<Decks>,
     selected: Res<SelectedCard>,
-    mut indicator: Query<(&mut Transform, &mut Visibility), With<SpellRangeIndicator>>,
+    mut gizmos: Gizmos,
 ) {
-    let mut hide = || {
-        for (_, mut v) in indicator.iter_mut() {
-            *v = Visibility::Hidden;
-        }
-    };
     if !matches!(*state, SimState::Solo | SimState::Playing) {
-        hide();
         return;
     }
     let Some(cursor) = window.cursor_position() else {
-        hide();
         return;
     };
     let (camera, camera_transform) = *camera;
     let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
-        hide();
         return;
     };
     let Some(t) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) else {
-        hide();
         return;
     };
     let mut point = ray.get_point(t);
@@ -213,10 +188,7 @@ pub fn spell_range_update(
     let faction = match net.as_ref() {
         Some(n) => match Faction::from_index(n.my_index) {
             Some(f) => f,
-            None => {
-                hide();
-                return;
-            }
+            None => return,
         },
         None if bot_mode.is_some() => Faction::Player,
         None => {
@@ -229,15 +201,17 @@ pub fn spell_range_update(
     };
     let card = decks.queue(faction)[selected.0.min(HAND_SIZE - 1)];
     let CardKind::Spell(spell) = &CARDS[card as usize].kind else {
-        hide();
-        return; // 非法术卡：显示的是部署区域，不显示范围圈
+        return; // 非法术卡：显示的是部署区域，不画范围圈
     };
-    for (mut transform, mut v) in &mut indicator {
-        // 圆心 = 放置点（地面射线求交点），略抬避免与部署区覆盖层穿模
-        transform.translation = Vec3::new(point.x, 0.1, point.z);
-        // 环放平后在局部 XY 平面（X 旋转只是躺倒）：X/Y 缩放半径、
-        // Z（管轴）保持 1——按世界轴缩放 (r,1,r) 会画出 Z 向恒为 1 的椭圆
-        transform.scale = Vec3::new(spell.radius, spell.radius, 1.0);
-        *v = Visibility::Visible;
-    }
+    // 贴地圆（法线朝上），圆心 = 放置点
+    gizmos
+        .circle(
+            Isometry3d::new(
+                Vec3::new(point.x, 0.1, point.z),
+                Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            ),
+            spell.radius,
+            Color::srgb(1.0, 0.95, 0.6),
+        )
+        .resolution(64);
 }
