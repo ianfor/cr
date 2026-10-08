@@ -311,7 +311,6 @@ mod tests {
                     (
                         combat::collect_inputs,
                         combat::apply_commands,
-                        cards::spell_volley_tick,
                         cards::process_deploying,
                         combat::status_effects,
                         combat::targeting,
@@ -321,7 +320,7 @@ mod tests {
                     )
                         .chain(),
                     (
-                        combat::move_projectiles,
+                        combat::strike_tick,
                         combat::separate_monsters,
                         combat::separate_from_statics,
                         combat::keep_out_of_river,

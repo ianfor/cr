@@ -14,13 +14,13 @@ pub fn moving(
         &Unit,
         &Mover,
         &mut Transform,
-        &Attacker,
+        &Skill,
         Option<&mut Charge>,
         Option<&Buffs>,
         Option<&Flying>,
     )>,
 ) {
-    for (u, mover, mut transform, attacker, mut charge, buffs, flying) in &mut movers {
+    for (u, mover, mut transform, skill, mut charge, buffs, flying) in &mut movers {
         // 禁移动（眩晕/缠绕）：实时查询 buff 标志位，无派生缓存；
         // 被控期间冲锋蓄力清零
         if buffs.map(|b| b.channels().cannot_move).unwrap_or(false) {
@@ -29,7 +29,7 @@ pub fn moving(
             }
             continue;
         }
-        let Some(target_entity) = attacker.target else {
+        let Some(target_entity) = skill.target else {
             continue;
         };
         // 点查表 O(1)（替代旧的 O(n) 线性 find）
@@ -39,11 +39,11 @@ pub fn moving(
         let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
         let edge = edge_dist(pos, u.radius, target.pos, target.radius);
-        if edge <= attacker.attack_range + 0.05 {
+        if edge <= skill.range + 0.05 {
             continue; // 射程内：attacking 负责，原地输出
         }
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
-        let stop_dist = attacker.attack_range + u.radius + target.radius;
+        let stop_dist = skill.range + u.radius + target.radius;
         let goal = steering_goal(pos, target.pos, flying.is_some());
         let mut to_goal = goal - pos;
         to_goal.y = 0.0;

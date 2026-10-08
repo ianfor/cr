@@ -1,11 +1,12 @@
 //! 战斗模块：机制拆分为能力组件 + 小系统（组合优于配置）
 //!
 //! - [`targeting`]：统一索敌（怪物 Seek / 塔与建筑 Guard），每帧构建全场快照
-//! - [`attack`]（attacking）：统一开火（近战直伤/自中心溅射、远程子弹、冲锋首击）
+//! - [`attack`]（attacking）：统一开火（按 Delivery 分近战当场结算/远程发射 Strike、冲锋首击）
 //! - [`movement`]（moving）：移动（桥道转向/飞行直线/冲锋蓄力/狂暴加速）
 //! - [`status`]（status_effects）：晕眩/狂暴计时（Stun/Rage 组件生命周期）
 //! - [`physics`]：推挤/河道禁入/静态阻挡（飞行单位全部跳过）
-//! - [`projectile`]（move_projectiles）：子弹追踪与命中点溅射
+//! - [`strike`]（strike_tick/detonate）：在途打击推进与统一命中结算
+//!   （追踪弹命中/近战直击/法术瞬发/法术波共用 detonate）
 //! - [`buildings`]：建筑寿命自毁/墓碑出兵
 //!
 //! 帧同步确定性：全部系统挂 SimTick 链（lib.rs / sim_env.rs / replay.rs 三处），
@@ -18,15 +19,16 @@ mod buildings;
 mod grid;
 mod movement;
 mod physics;
-mod projectile;
 mod status;
+mod strike;
 mod targeting;
 
 pub use attack::attacking;
 pub use buildings::building_spawner;
 pub use movement::moving;
 pub use physics::{keep_out_of_river, separate_monsters, separate_from_statics};
-pub use projectile::{move_projectiles, ProjectileAssets};
+pub(crate) use strike::detonate;
+pub use strike::{strike_tick, ProjectileAssets};
 pub use status::status_effects;
 pub use targeting::targeting;
 
@@ -219,13 +221,16 @@ pub fn apply_commands(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     towers: Query<(&Unit, &Transform)>,
-    mut spell_targets: Query<(
-        Entity,
-        &Unit,
-        &mut Health,
-        &Transform,
-        Option<&mut Buffs>,
-    )>,
+    mut spell_targets: Query<
+        (
+            Entity,
+            &Unit,
+            &Transform,
+            Option<&Flying>,
+            &mut Health,
+        ),
+        Without<Strike>,
+    >,
 ) {
     // 部署区域判定用的塔快照（faction, is_king, pos）
     let tower_snaps: Vec<(Faction, bool, Vec3)> = towers
@@ -400,7 +405,7 @@ pub struct SpellFx {
 
 /// 万箭齐发的箭矢实体（纯表现层）：从施法方国王塔顶抛物线飞向圈内散布落点。
 /// **落点时刻 = 对应波数的结算帧**（发射延迟/飞行时长从 SPELL_WAVE 时间表
-/// 反推，特效与伤害逐帧对齐）；法术伤害由 SpellVolley 在模拟链内结算
+/// 反推，特效与伤害逐帧对齐）；法术伤害由 Strike(Volley) 在模拟链内结算
 #[derive(Component)]
 pub struct SpellArrow {
     from: Vec3,
@@ -469,7 +474,7 @@ pub fn spell_fx_spawn(
                 ..default()
             });
             for wave in 0..spell.waves {
-                // 本波落地时刻（秒）——与模拟侧 SpellVolley 的波帧一致
+                // 本波落地时刻（秒）——与模拟侧 Strike(Volley) 的波帧一致
                 let land = (SPELL_WAVE_FIRST_TICKS + wave * SPELL_WAVE_INTERVAL_TICKS) as f32
                     * TICK_DT;
                 // 本波光环：到点扩散
@@ -589,20 +594,23 @@ pub fn spell_arrows_fly(
 }
 
 /// 多段法术落点危险圈（纯表现层）：法术结算期间在施法点持续显示作用范围。
-/// 生命周期与模拟侧 SpellVolley 实体严格一致——放置时生成、最后一波
+/// 生命周期与模拟侧 Strike(Volley) 实体严格一致——放置时生成、最后一波
 /// 落地后销毁，圈也随之消失（模拟实体是唯一权威，回放模式自动正确）
 pub fn spell_volley_indicator(
-    volleys: Query<&SpellVolley>,
+    strikes: Query<&Strike>,
     mut gizmos: bevy::gizmos::prelude::Gizmos,
 ) {
-    for v in &volleys {
+    for s in &strikes {
+        let Flight::Volley { x, z, .. } = s.flight else {
+            continue; // 追踪弹不画危险圈
+        };
         gizmos
             .circle(
                 Isometry3d::new(
-                    Vec3::new(v.x, 0.1, v.z),
+                    Vec3::new(x, 0.1, z),
                     Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
                 ),
-                v.radius,
+                s.payload.splash_radius,
                 // 万箭橙（与卡色一致）：危险区，和瞄准时的黄圈区分
                 Color::srgb(0.95, 0.6, 0.2),
             )
@@ -651,17 +659,15 @@ pub(crate) fn test_tower(faction: Faction) -> Unit {
     Unit::tower(faction, 1.0)
 }
 
-/// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速）
+/// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 / 近战）
 #[cfg(test)]
-pub(crate) fn test_attacker() -> Attacker {
-    Attacker {
-        damage: 100.0,
-        attack_range: 0.75,
+pub(crate) fn test_attacker() -> Skill {
+    Skill {
+        range: 0.75,
         interval: 1.0,
+        payload: Payload::damage_only(100.0, 0.0, false, true),
+        delivery: Delivery::Melee,
         cooldown: 1.0,
-        splash_radius: 0.0,
-        hits_air: false,
-        ranged: false,
         target: None,
         engaged: false,
     }
@@ -690,14 +696,12 @@ mod tests {
         };
         world.spawn((
             unit,
-            Attacker {
-                damage: TOWER_ATTACK_DAMAGE,
-                attack_range: 6.0,
+            Skill {
+                range: 6.0,
                 interval: 1.0,
+                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+                delivery: Delivery::Homing,
                 cooldown: 1.0,
-                splash_radius: 0.0,
-                hits_air: true,
-                ranged: true,
                 target: None,
                 engaged: false,
             },

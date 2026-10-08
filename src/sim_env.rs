@@ -446,7 +446,6 @@ impl SimWorld {
                     (
                         combat::collect_inputs,
                         combat::apply_commands,
-                        cards::spell_volley_tick,
                         cards::process_deploying,
                         combat::status_effects,
                         combat::targeting,
@@ -456,7 +455,7 @@ impl SimWorld {
                     )
                         .chain(),
                     (
-                        combat::move_projectiles,
+                        combat::strike_tick,
                         combat::separate_monsters,
                         combat::separate_from_statics,
                         combat::keep_out_of_river,
@@ -1026,14 +1025,12 @@ mod tests {
                 let z = (next() % 2000) as f32 / 100.0 - 10.0;
                 world.spawn((
                     Unit::troop(faction, 0, 0.5, 1.0),
-                    Attacker {
-                        damage: 100.0,
-                        attack_range: 0.75,
+                    Skill {
+                        range: 0.75,
                         interval: 1.0,
+                        payload: Payload::damage_only(100.0, 0.0, false, true),
+                        delivery: Delivery::Melee,
                         cooldown: 1.0,
-                        splash_radius: 0.0,
-                        hits_air: false,
-                        ranged: false,
                         target: None,
                         engaged: false,
                     },

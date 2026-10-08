@@ -145,7 +145,7 @@ pub fn run_app() {
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
     // 法术施法特效（纯表现层；万箭箭矢的落点时刻与波结算帧对齐，
-    // 落点危险圈与 SpellVolley 实体同生命周期）
+    // 落点危险圈与 Strike(Volley) 实体同生命周期）
     .add_systems(
         Update,
         (
@@ -164,7 +164,6 @@ pub fn run_app() {
             (
                 combat::collect_inputs,
                 combat::apply_commands,
-                cards::spell_volley_tick,
                 cards::process_deploying,
                 combat::status_effects,
                 combat::targeting,
@@ -174,7 +173,7 @@ pub fn run_app() {
             )
                 .chain(),
             (
-                combat::move_projectiles,
+                combat::strike_tick,
                 combat::separate_monsters,
                 combat::separate_from_statics,
                 combat::keep_out_of_river,

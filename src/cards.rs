@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use crate::combat::detonate;
 use crate::components::*;
 use crate::constants::*;
 use crate::health_bar;
@@ -164,13 +165,16 @@ pub fn play_card(
     elixir: &mut Elixir,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    spell_targets: &mut Query<(
-        Entity,
-        &Unit,
-        &mut Health,
-        &Transform,
-        Option<&mut Buffs>,
-    )>,
+    spell_targets: &mut Query<
+        (
+            Entity,
+            &Unit,
+            &Transform,
+            Option<&Flying>,
+            &mut Health,
+        ),
+        Without<Strike>,
+    >,
     faction: Faction,
     card_id: u8,
     pos: Vec3,
@@ -220,8 +224,8 @@ pub fn play_card(
                 );
             }
         }
-        // 法术：瞬发结算（伤害对敌，狂暴/晕眩对己/敌——都打包成 buff）；
-        // 多段法术（waves > 1）改为 SpellVolley 分波延迟结算
+        // 法术：统一走 detonate 结算（伤害对敌、狂暴/晕眩打包成 payload buff）；
+        // 多段法术（waves > 1）改为 Strike 分波延迟结算
         CardKind::Spell(spell) => {
             if spell.waves > 1 {
                 // 万箭齐发类：伤害按波落地（首波 SPELL_WAVE_FIRST_TICKS 帧、
@@ -229,83 +233,25 @@ pub fn play_card(
                 // 狂暴/晕眩仍属瞬发效果——多段卡目前不带这些（带了也只该
                 // 在首波生效，届时再扩展）
                 commands.spawn((
-                    SpellVolley {
-                        faction,
-                        damage: spell.damage / spell.waves as f32,
-                        radius: spell.radius,
-                        x: pos.x,
-                        z: pos.z,
-                        waves_left: spell.waves,
-                        next_in: SPELL_WAVE_FIRST_TICKS,
-                        interval: SPELL_WAVE_INTERVAL_TICKS,
+                    Strike {
+                        attacker: faction,
+                        payload: spell_payload(spell, spell.damage / spell.waves as f32),
+                        flight: Flight::Volley {
+                            x: pos.x,
+                            z: pos.z,
+                            waves_left: spell.waves,
+                            next_in: SPELL_WAVE_FIRST_TICKS,
+                            interval: SPELL_WAVE_INTERVAL_TICKS,
+                        },
                     },
                     // 带 Transform：reset_world 按 Transform/Node 清场景实体
                     Transform::default(),
                 ));
                 return;
             }
-            for (e, u, mut hp, tr, mut buffs) in spell_targets.iter_mut() {
-                if u.kind.is_tower() {
-                    continue; // 塔不吃法术
-                }
-                let target_faction = u.faction;
-                let mut d = tr.translation - pos;
-                d.y = 0.0;
-                if d.length() > spell.radius {
-                    continue;
-                }
-                if target_faction == faction {
-                    // 己方单位：狂暴 buff（仅部队）
-                    if let (Some(r), true) = (&spell.rage, u.kind == UnitKind::Troop) {
-                        let buff = ActiveBuff {
-                            name: "Rage",
-                            secs: r.secs,
-                            stacks: 1,
-                            policy: StackPolicy::Refresh,
-                            flags: CCFlags::NONE,
-                            hp_per_sec: 0.0,
-                            effects: vec![
-                                StatMod {
-                                    stat: StatKind::MoveSpeed,
-                                    op: Op::Pct,
-                                    value: r.pct,
-                                },
-                                StatMod {
-                                    stat: StatKind::AttackSpeed,
-                                    op: Op::Pct,
-                                    value: r.pct,
-                                },
-                            ],
-                        };
-                        match buffs.as_mut() {
-                            Some(existing) => existing.apply(buff),
-                            None => {
-                                commands.entity(e).insert(Buffs::new(buff));
-                            }
-                        }
-                    }
-                } else {
-                    // 敌方单位：伤害 + 晕眩 buff（仅部队；Stun 标记由 status 同步）
-                    hp.current -= spell.damage;
-                    if spell.stun_secs > 0.0 && u.kind == UnitKind::Troop {
-                        let buff = ActiveBuff {
-                            name: "Stun",
-                            secs: spell.stun_secs,
-                            stacks: 1,
-                            policy: StackPolicy::Longer,
-                            flags: CCFlags::STUN,
-                            hp_per_sec: 0.0,
-                            effects: vec![],
-                        };
-                        match buffs.as_mut() {
-                            Some(existing) => existing.apply(buff),
-                            None => {
-                                commands.entity(e).insert(Buffs::new(buff));
-                            }
-                        }
-                    }
-                }
-            }
+            // 单波法术：瞬发直接结算（无 primary，AOE 判定）
+            let payload = spell_payload(spell, spell.damage);
+            detonate(commands, spell_targets, &payload, faction, pos, None);
         }
         // 建筑：先出虚影，放置时间结束生成建筑实体（process_deploying 处理）
         CardKind::Building(_) => {
@@ -314,42 +260,50 @@ pub fn play_card(
     }
 }
 
-/// 多段法术逐帧推进（帧同步链内，紧随 apply_commands）：
-/// 到点结算一波——目标规则与瞬发法术完全一致（敌怪 + 敌建筑卡，
-/// 中心距 ≤ 半径，塔不吃法术）。波间倒数，波数耗尽销毁。
-/// 按落波时刻的位置判定：期间走位可以躲出圈（对齐 CR 万箭手感）
-pub fn spell_volley_tick(
-    mut commands: Commands,
-    mut volleys: Query<(Entity, &mut SpellVolley)>,
-    mut targets: Query<(&Unit, &mut Health, &Transform)>,
-) {
-    for (ve, mut v) in &mut volleys {
-        if v.next_in > 0 {
-            v.next_in -= 1;
-            continue;
-        }
-        let pos = Vec3::new(v.x, 0.0, v.z);
-        for (u, mut hp, tr) in targets.iter_mut() {
-            if u.kind.is_tower() {
-                continue; // 塔不吃法术（与瞬发分支一致）
-            }
-            if u.faction == v.faction {
-                continue;
-            }
-            let mut d = tr.translation - pos;
-            d.y = 0.0;
-            if d.length() <= v.radius {
-                hp.current -= v.damage;
-            }
-        }
-        v.waves_left -= 1;
-        if v.waves_left == 0 {
-            commands.entity(ve).despawn();
+/// 法术结算负载：伤害 + 晕眩（敌）/ 狂暴（己）打包进 payload。
+/// hits_air 恒 true（法术打空军——旧路径无 Flying 过滤，显式化）；
+/// hits_towers false（塔不吃法术）。buff 施加对象仅部队（detonate 内统一）
+fn spell_payload(spell: &SpellSpec, damage: f32) -> Payload {
+    Payload {
+        damage,
+        splash_radius: spell.radius,
+        hits_air: true,
+        hits_towers: false,
+        enemy_buffs: if spell.stun_secs > 0.0 {
+            vec![ActiveBuff {
+                name: "Stun",
+                secs: spell.stun_secs,
+                stacks: 1,
+                policy: StackPolicy::Longer,
+                flags: CCFlags::STUN,
+                hp_per_sec: 0.0,
+                effects: vec![],
+            }]
         } else {
-            // −1 补栅栏：本帧已结算（next_in 从 0 起数），
-            // 重置 interval−1 使波间隔恰为 interval 帧
-            v.next_in = v.interval - 1;
-        }
+            vec![]
+        },
+        ally_buffs: spell.rage.as_ref().map_or(vec![], |r| {
+            vec![ActiveBuff {
+                name: "Rage",
+                secs: r.secs,
+                stacks: 1,
+                policy: StackPolicy::Refresh,
+                flags: CCFlags::NONE,
+                hp_per_sec: 0.0,
+                effects: vec![
+                    StatMod {
+                        stat: StatKind::MoveSpeed,
+                        op: Op::Pct,
+                        value: r.pct,
+                    },
+                    StatMod {
+                        stat: StatKind::AttackSpeed,
+                        op: Op::Pct,
+                        value: r.pct,
+                    },
+                ],
+            }]
+        }),
     }
 }
 
@@ -443,14 +397,22 @@ pub fn spawn_unit(
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
         Unit::troop(faction, card, r, spec.mass),
-        Attacker {
-            damage: spec.damage,
-            attack_range: spec.attack_range,
+        Skill {
+            range: spec.attack_range,
             interval: spec.attack_interval,
+            // 近战溅射波及塔（旧规则）、远程弹溅不吃塔——hits_towers 显式化
+            payload: Payload::damage_only(
+                spec.damage,
+                spec.splash_radius,
+                spec.hits_air,
+                !spec.ranged,
+            ),
+            delivery: if spec.ranged {
+                Delivery::Homing
+            } else {
+                Delivery::Melee
+            },
             cooldown: spec.attack_interval,
-            splash_radius: spec.splash_radius,
-            hits_air: spec.hits_air,
-            ranged: spec.ranged,
             target: None,
             engaged: false,
         },
@@ -504,7 +466,7 @@ pub fn decay_buff(hp: f32, lifetime_secs: f32) -> ActiveBuff {
 }
 
 /// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，
-/// 攻击/出兵/寿命分别由 Attacker/Spawner/Decay buff 表达；
+/// 攻击/出兵/寿命分别由 Skill/Spawner/Decay buff 表达；
 /// 寿命尽头走 despawn_dead 通用死亡路径）
 fn spawn_building(
     commands: &mut Commands,
@@ -527,14 +489,12 @@ fn spawn_building(
     ));
     // 加农炮类攻击能力（冷却从 0 起：有敌即开火，之后按间隔）
     if let Some(a) = &spec.attack {
-        e.insert(Attacker {
-            damage: a.damage,
-            attack_range: a.range,
+        e.insert(Skill {
+            range: a.range,
             interval: a.interval,
+            payload: Payload::damage_only(a.damage, 0.0, a.hits_air, false),
+            delivery: Delivery::Homing,
             cooldown: 0.0,
-            splash_radius: 0.0,
-            hits_air: a.hits_air,
-            ranged: true,
             target: None,
             engaged: false,
         });
@@ -743,9 +703,9 @@ mod tests {
         let mut troops = world.query::<(Entity, &Unit)>();
         let spawned: Vec<Entity> = troops.iter(world).map(|(e, _u)| e).collect();
         assert_eq!(spawned.len(), spec.count as usize);
-        let attacker = world.get::<Attacker>(spawned[0]).unwrap();
-        assert_eq!(attacker.damage, ms.damage);
-        assert_eq!(attacker.interval, ms.attack_interval);
+        let skill = world.get::<Skill>(spawned[0]).unwrap();
+        assert_eq!(skill.payload.damage, ms.damage);
+        assert_eq!(skill.interval, ms.attack_interval);
         assert!(world.get::<Targeting>(spawned[0]).is_some());
         assert!(world.get::<Mover>(spawned[0]).is_some());
     }
@@ -851,6 +811,54 @@ mod tests {
         assert_eq!(deployers.iter(world).count(), 0);
         let mut units = world.query::<&Unit>();
         assert_eq!(units.iter(world).count(), 3, "法术不应产生新单位");
+    }
+
+    /// 法术打空军（spell_payload hits_air 恒 true）：
+    /// 电击必须砸到飞行单位（旧路径无 Flying 过滤，统一后显式保留）
+    #[test]
+    fn spell_payload_hits_air() {
+        let mut app = App::new();
+        app.insert_resource(Elixir {
+            player: ELIXIR_START,
+            enemy: ELIXIR_START,
+        });
+        app.insert_resource(Decks::shuffled());
+        app.world_mut().resource_mut::<Decks>().player[0] = 15; // Zap
+        app.init_resource::<Tick>();
+        app.init_resource::<CommandBuffer>();
+        app.init_resource::<CommandLog>();
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+
+        let world = app.world_mut();
+        // 敌方飞行单位（亡灵）在法术范围内
+        let flyer = world
+            .spawn((
+                Unit::troop(Faction::Enemy, 0, 0.5, 1.0),
+                Flying,
+                Health::new(320.0),
+                Transform::from_xyz(0.0, 2.6, 5.0),
+            ))
+            .id();
+        world.resource_mut::<CommandBuffer>().local.insert(
+            0,
+            vec![GameCommand::Deploy {
+                faction: Faction::Player,
+                card: 15,
+                x: 0.0,
+                z: 5.0,
+            }],
+        );
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(crate::combat::apply_commands);
+        schedule.run(world);
+
+        assert_eq!(
+            world.get::<Health>(flyer).unwrap().current,
+            320.0 - 160.0,
+            "电击必须命中飞行单位（hits_air 恒 true）"
+        );
     }
 
     /// 建筑卡出牌：己方半场生成虚影，落成建筑实体（可被索敌、有寿命）
@@ -995,7 +1003,7 @@ mod zone_tests {
         assert_eq!(q.iter(app.world()).count(), 1, "区域外部署不应出兵（仅存敌方塔）");
     }
 
-    /// 万箭出牌链路：扣 3 圣水、手牌循环离手、生成 SpellVolley 多波实体
+    /// 万箭出牌链路：扣 3 圣水、手牌循环离手、生成 Strike 多波实体
     #[test]
     fn arrows_cost_elixir_and_spawn_volley() {
         let mut app = App::new();
@@ -1030,7 +1038,7 @@ mod zone_tests {
         schedule.run(app.world_mut());
 
         assert_eq!(app.world().resource::<Elixir>().player, 7.0, "万箭应扣 3 圣水");
-        let mut q = app.world_mut().query::<&SpellVolley>();
+        let mut q = app.world_mut().query::<&Strike>();
         assert_eq!(q.iter(app.world()).count(), 1, "应生成多波结算实体");
         assert!(
             !app.world().resource::<Decks>().player[..HAND_SIZE].contains(&16),
@@ -1068,21 +1076,22 @@ mod zone_tests {
             .id();
         // 3 波 × 100，半径 2（模拟 play_card 的多波分支）
         world.spawn((
-            SpellVolley {
-                faction: Faction::Player,
-                damage: 100.0,
-                radius: 2.0,
-                x: 0.0,
-                z: 0.0,
-                waves_left: 3,
-                next_in: SPELL_WAVE_FIRST_TICKS,
-                interval: SPELL_WAVE_INTERVAL_TICKS,
+            Strike {
+                attacker: Faction::Player,
+                payload: Payload::damage_only(100.0, 2.0, true, false),
+                flight: Flight::Volley {
+                    x: 0.0,
+                    z: 0.0,
+                    waves_left: 3,
+                    next_in: SPELL_WAVE_FIRST_TICKS,
+                    interval: SPELL_WAVE_INTERVAL_TICKS,
+                },
             },
             Transform::default(),
         ));
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(spell_volley_tick);
+        schedule.add_systems(crate::combat::strike_tick);
         // run k = 施放后第 k-1 tick（run 1 = tick 0，同帧首跑）
         let hp = |w: &mut World, e: Entity| w.get::<Health>(e).unwrap().current;
         let mut wave_tick = |n: usize| {
@@ -1103,7 +1112,7 @@ mod zone_tests {
         assert_eq!(hp(world, ally), 1000.0, "己方不吃伤害");
         // 波数耗尽：实体销毁（命令在 run 结束后应用）
         schedule.run(world);
-        let mut q = world.query::<&SpellVolley>();
+        let mut q = world.query::<&Strike>();
         assert_eq!(q.iter(world).count(), 0, "波数耗尽后实体应销毁");
     }
 }

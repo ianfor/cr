@@ -4,7 +4,7 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use crate::components::{
-    faction_color, Attacker, Faction, Health, Targeting, TargetPolicy, Unit,
+    faction_color, Delivery, Faction, Health, Payload, Skill, Targeting, TargetPolicy, Unit,
 };
 use crate::constants::*;
 use crate::health_bar;
@@ -189,15 +189,13 @@ fn spawn_tower(
     };
     let mut root = commands.spawn((
         unit,
-        // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统
-        Attacker {
-            damage: TOWER_ATTACK_DAMAGE,
-            attack_range: spec.attack_range,
+        // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统（远程追踪弹）
+        Skill {
+            range: spec.attack_range,
             interval: ATTACK_INTERVAL,
+            payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+            delivery: Delivery::Homing,
             cooldown: ATTACK_INTERVAL,
-            splash_radius: 0.0,
-            hits_air: true,
-            ranged: true,
             target: None,
             engaged: false,
         },

@@ -73,7 +73,7 @@ impl UnitKind {
 }
 
 /// 场上单位（怪/塔/建筑卡的统一组件）：类别 + 阵营 + 卡种 + 物理尺寸。
-/// 战斗机制拆在能力组件上（Attacker/Targeting/Mover/...），
+/// 战斗机制拆在能力组件上（Skill/Targeting/Mover/...），
 /// 挂什么组件就有什么能力——加新机制 = 加新组件，不改现有类型
 #[derive(Component, Clone, Copy)]
 pub struct Unit {
@@ -106,23 +106,67 @@ impl Unit {
 
 // ===== 战斗能力组件（怪/塔/建筑按需挂载） =====
 
-/// 攻击能力：伤害/射程/攻速/溅射/对空 + 运行时目标与冷却。
-/// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用同一套开火逻辑
-#[derive(Component)]
-pub struct Attacker {
+// ===== 攻击与打击 =====
+
+/// 结算负载：命中时发生什么（普攻直击/近战溅射/法术/弹着点/波共用）。
+/// 攻击方（Skill）与在途打击（Strike）各持一份，直击与 AOE 共用同一份
+#[derive(Clone)]
+pub struct Payload {
     pub damage: f32,
-    /// 攻击范围（边缘距离）
-    pub attack_range: f32,
+    /// 溅射/作用半径（0 = 单体直击）
+    pub splash_radius: f32,
+    /// 能否波及空中单位（对空攻击/法术恒 true）
+    pub hits_air: bool,
+    /// AOE 是否波及塔：近战溅射 true（瓦基丽溅塔）、法术/弹溅 false
+    /// （显式化旧规则：弹溅与法术原本就跳塔，近战溅射原本就含塔）
+    pub hits_towers: bool,
+    /// 命中敌方时施加的 buff（仅部队；晕眩等）
+    pub enemy_buffs: Vec<ActiveBuff>,
+    /// 命中己方时施加的 buff（仅部队；狂暴）
+    pub ally_buffs: Vec<ActiveBuff>,
+}
+
+impl Payload {
+    /// 纯伤害负载（无 buff）
+    pub fn damage_only(damage: f32, splash_radius: f32, hits_air: bool, hits_towers: bool) -> Self {
+        Payload {
+            damage,
+            splash_radius,
+            hits_air,
+            hits_towers,
+            enemy_buffs: vec![],
+            ally_buffs: vec![],
+        }
+    }
+
+    /// 是否有附带 buff（AOE 早退守卫用：纯伤害负载不进遍历）
+    pub fn has_buffs(&self) -> bool {
+        !self.enemy_buffs.is_empty() || !self.ally_buffs.is_empty()
+    }
+}
+
+/// 投放方式：瞬发直击（近战）还是发射在途 Strike（远程追踪弹）
+#[derive(Clone, Copy)]
+pub enum Delivery {
+    /// 近战：当场以自身位置为中心结算
+    Melee,
+    /// 远程：发射追踪弹（Strike + Flight::Homing）
+    Homing,
+}
+
+/// 攻击能力：射程/攻速/结算负载/投放方式 + 运行时目标与冷却。
+/// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用同一套开火逻辑；
+/// 命中结算是统一的 detonate（strike 模块）
+#[derive(Component)]
+pub struct Skill {
+    /// 攻击范围（边缘距离；索敌/移动/开火三方共用）
+    pub range: f32,
     /// 攻击间隔（秒）
     pub interval: f32,
+    pub payload: Payload,
+    pub delivery: Delivery,
     /// 攻击冷却（秒，倒计数；仅在目标进入射程后流逝）
     pub cooldown: f32,
-    /// 溅射半径（0 = 单体）
-    pub splash_radius: f32,
-    /// 能否攻击空中单位
-    pub hits_air: bool,
-    /// 远程（发射追踪子弹）还是近战（直接扣血）
-    pub ranged: bool,
     /// 锁定的攻击目标
     pub target: Option<Entity>,
     /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
@@ -458,26 +502,36 @@ pub struct Spawner {
     pub cooldown: f32,
 }
 
-/// 多段法术（waves > 1，万箭齐发）：分波延迟结算的范围伤害实体。
-/// 时间表（constants.rs 的 SPELL_WAVE_FIRST_TICKS / INTERVAL_TICKS）
-/// 是结算与特效的共同权威——箭矢飞行与光环扩散的落点时刻
-/// 都从这张表反推。挂 SimTick 链逐帧推进（确定性）。
+/// 在途打击：已释放、未结算的技能实例（追踪弹 / 多段法术波）。
+/// 挂 SimTick 链由 strike_tick 逐帧推进（确定性）。
 /// 带 Transform 纯为让 reset_world 能把它当场景实体清掉
 #[derive(Component)]
-pub struct SpellVolley {
-    pub faction: Faction,
-    /// 每波伤害（= 卡牌伤害 / 波数，总量守恒）
-    pub damage: f32,
-    /// 作用半径（按落波时刻的位置判定——期间可以走位躲）
-    pub radius: f32,
-    pub x: f32,
-    pub z: f32,
-    /// 剩余波数
-    pub waves_left: u32,
-    /// 距下一波帧数（每帧 -1，到 0 结算一波后重置为 interval）
-    pub next_in: u32,
-    /// 波间隔（帧）
-    pub interval: u32,
+pub struct Strike {
+    /// 施放方阵营（结算判定敌我）
+    pub attacker: Faction,
+    pub payload: Payload,
+    pub flight: Flight,
+}
+
+/// 飞行方式：追踪目标直击（远程普攻弹）或原地分波结算（多段法术）
+pub enum Flight {
+    /// 追踪目标：贴身时以目标位置为中心结算（原 Projectile）
+    Homing {
+        target: Entity,
+    },
+    /// 原地多波：到点以 (x, 0, z) 为中心结算一波（原 SpellVolley）。
+    /// 时间表（constants.rs 的 SPELL_WAVE_FIRST_TICKS / INTERVAL_TICKS）
+    /// 是结算与特效的共同权威——箭矢飞行与光环扩散的落点时刻都从它反推
+    Volley {
+        x: f32,
+        z: f32,
+        /// 剩余波数
+        waves_left: u32,
+        /// 距下一波帧数（每帧 -1，到 0 结算一波后重置为 interval）
+        next_in: u32,
+        /// 波间隔（帧）
+        interval: u32,
+    },
 }
 
 #[derive(Component)]
@@ -498,19 +552,6 @@ pub struct Deploying {
     pub card: u8,
     pub faction: Faction,
     pub ticks_left: u32,
-}
-
-/// 国王塔/远程单位发射的子弹（追踪目标的小球）
-#[derive(Component)]
-pub struct Projectile {
-    pub target: Entity,
-    pub damage: f32,
-    /// 溅射半径（0 = 单体）：命中时对攻击方阵营的敌人范围伤害
-    pub splash_radius: f32,
-    /// 攻击者能否对空（溅射是否波及空中单位）
-    pub hits_air: bool,
-    /// 攻击者阵营（溅射判定敌我）
-    pub attacker: Faction,
 }
 
 /// 血条根节点

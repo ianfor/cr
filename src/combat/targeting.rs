@@ -24,7 +24,7 @@ pub fn targeting(
     mut snaps_res: ResMut<WorldSnaps>,
     mut units: Query<(
         Entity,
-        &mut Attacker,
+        &mut Skill,
         &Targeting,
         &Transform,
         &Unit,
@@ -61,7 +61,7 @@ pub fn targeting(
     }
     let (snaps, grid, index) = (&*snaps, &*grid, &*index);
 
-    for (entity, mut attacker, targeting, transform, unit, buffs) in &mut units {
+    for (entity, mut skill, targeting, transform, unit, buffs) in &mut units {
         // 禁索敌（眩晕/致盲）：实时查询 buff 标志位，无派生缓存
         if buffs.map(|b| b.channels().cannot_seek).unwrap_or(false) {
             continue;
@@ -73,20 +73,20 @@ pub fn targeting(
         match &targeting.0 {
             // ===== 守卫（塔/建筑卡）：只打怪，出射程丢锁 =====
             TargetPolicy::Guard => {
-                if let Some(e) = attacker.target {
+                if let Some(e) = skill.target {
                     let invalid = match index.get(&e).map(|&i| &snaps[i as usize]) {
                         Some(s) if s.faction != faction => {
-                            !can_target(attacker.hits_air, false, s)
+                            !can_target(skill.payload.hits_air, false, s)
                                 || edge_dist(pos, self_radius, s.pos, s.radius)
-                                    > attacker.attack_range
+                                    > skill.range
                         }
                         _ => true,
                     };
                     if invalid {
-                        attacker.target = None;
+                        skill.target = None;
                     }
                 }
-                if attacker.target.is_none() {
+                if skill.target.is_none() {
                     let found = nearest_monster(
                         grid,
                         snaps,
@@ -94,10 +94,10 @@ pub fn targeting(
                         faction,
                         entity,
                         self_radius,
-                        attacker.attack_range,
-                        attacker.hits_air,
+                        skill.range,
+                        skill.payload.hits_air,
                     );
-                    attacker.target = found.map(|(_, i)| snaps[i as usize].entity);
+                    skill.target = found.map(|(_, i)| snaps[i as usize].entity);
                 }
             }
             // ===== 怪物：aggro 内最近 + 建筑兜底 + 交战锁定 =====
@@ -109,22 +109,22 @@ pub fn targeting(
                 // 1) 目标消失（死亡）
                 // 2) 已交战（进过攻击范围）后被挤出攻击范围 = 被打断
                 //    （站桩输出被新放置的怪挤开等）。未交战不因距离解锁。
-                if let Some(e) = attacker.target {
+                if let Some(e) = skill.target {
                     let invalid = match index.get(&e).map(|&i| &snaps[i as usize]) {
                         Some(s) if s.faction != faction => {
-                            attacker.engaged
+                            skill.engaged
                                 && edge_dist(pos, self_radius, s.pos, s.radius)
-                                    > attacker.attack_range + 0.05
+                                    > skill.range + 0.05
                         }
                         _ => true,
                     };
                     if invalid {
-                        attacker.target = None;
-                        attacker.engaged = false;
+                        skill.target = None;
+                        skill.engaged = false;
                     }
                 }
                 // 索敌：未交战每帧重评（交战中锁定不换）
-                if !attacker.engaged {
+                if !skill.engaged {
                     // aggro 内最近（含塔/建筑）。只攻建筑单位：怪物全被
                     // can_target 拒 → 跳过网格查询，只扫静态
                     let in_aggro = if *building_only {
@@ -139,7 +139,7 @@ pub fn targeting(
                                 entity,
                                 self_radius,
                                 *aggro_range,
-                                attacker.hits_air,
+                                skill.payload.hits_air,
                             ),
                             nearest_static(snaps, pos, faction, entity, self_radius, *aggro_range),
                         )
@@ -148,7 +148,7 @@ pub fn targeting(
                     let found = in_aggro.or_else(|| {
                         nearest_static(snaps, pos, faction, entity, self_radius, f32::INFINITY)
                     });
-                    attacker.target = found.map(|(_, i)| snaps[i as usize].entity);
+                    skill.target = found.map(|(_, i)| snaps[i as usize].entity);
                 }
             }
         }
@@ -251,14 +251,12 @@ mod tests {
         world
             .spawn((
                 Unit::tower(faction, 1.0),
-                Attacker {
-                    damage: TOWER_ATTACK_DAMAGE,
-                    attack_range: 6.0,
+                Skill {
+                    range: 6.0,
                     interval: 1.0,
+                    payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+                    delivery: Delivery::Homing,
                     cooldown: 1.0,
-                    splash_radius: 0.0,
-                    hits_air: true,
-                    ranged: true,
                     target: None,
                     engaged: false,
                 },
@@ -280,8 +278,8 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(targeting);
         schedule.run(world);
-        assert_eq!(world.get::<Attacker>(a).unwrap().target, Some(b));
-        assert_eq!(world.get::<Attacker>(b).unwrap().target, Some(a));
+        assert_eq!(world.get::<Skill>(a).unwrap().target, Some(b));
+        assert_eq!(world.get::<Skill>(b).unwrap().target, Some(a));
     }
 
     /// 行军中的怪（未交战）必须回应进入 aggro 的敌人：改锁更近的怪。
@@ -297,14 +295,14 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         // 出生时无怪可打 → 锁塔（行军方向）
-        assert_eq!(world.get::<Attacker>(m).unwrap().target, Some(tower));
-        assert!(!world.get::<Attacker>(m).unwrap().engaged);
+        assert_eq!(world.get::<Skill>(m).unwrap().target, Some(tower));
+        assert!(!world.get::<Skill>(m).unwrap().engaged);
 
         // 敌方怪物进入 aggro（距离 4 < 塔 17.5）：未交战必须改锁更近的怪
         let e = spawn_seek_monster(world, Faction::Enemy, Vec3::new(0.0, 1.0, -1.0));
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().target,
             Some(e),
             "行军中的单位必须回应进入 aggro 的更近敌人"
         );
@@ -323,7 +321,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().target,
             Some(tower),
             "aggro 内塔更近时必须锁塔（塔不是兜底目标）"
         );
@@ -341,14 +339,14 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
         schedule.run(world);
-        assert_eq!(world.get::<Attacker>(m).unwrap().target, Some(tower));
-        assert!(world.get::<Attacker>(m).unwrap().engaged, "贴塔单位应已交战");
+        assert_eq!(world.get::<Skill>(m).unwrap().target, Some(tower));
+        assert!(world.get::<Skill>(m).unwrap().engaged, "贴塔单位应已交战");
 
         // 敌方怪物进入 aggro：已交战的怪不得改目标
         spawn_seek_monster(world, Faction::Enemy, Vec3::new(0.0, 1.0, 9.0));
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().target,
             Some(tower),
             "交战中的单位不得改目标"
         );
@@ -365,8 +363,8 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
         schedule.run(world);
-        assert_eq!(world.get::<Attacker>(m).unwrap().target, Some(tower));
-        assert!(world.get::<Attacker>(m).unwrap().engaged);
+        assert_eq!(world.get::<Skill>(m).unwrap().target, Some(tower));
+        assert!(world.get::<Skill>(m).unwrap().engaged);
 
         // 模拟被挤开：挪到塔的攻击范围外，同时挤它的敌怪就在 aggro 内
         world.get_mut::<Transform>(m).unwrap().translation = Vec3::new(0.0, 1.0, 9.0);
@@ -374,7 +372,7 @@ mod tests {
 
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().target,
             Some(e),
             "被打断后必须改锁 aggro 内最近的敌人（挤它的那只）"
         );
@@ -408,7 +406,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(g).unwrap().target,
+            world.get::<Skill>(g).unwrap().target,
             Some(tower),
             "只攻建筑单位必须无视怪物直奔塔"
         );
@@ -436,7 +434,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(knight).unwrap().target,
+            world.get::<Skill>(knight).unwrap().target,
             Some(tower),
             "不能对空的单位必须跳过飞行单位"
         );
@@ -454,13 +452,13 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(targeting);
         schedule.run(world);
-        assert_eq!(world.get::<Attacker>(tower).unwrap().target, Some(m));
+        assert_eq!(world.get::<Skill>(tower).unwrap().target, Some(m));
 
         // 怪跑出射程：丢锁
         world.get_mut::<Transform>(m).unwrap().translation = Vec3::new(0.0, 1.0, 16.5);
         schedule.run(world);
         assert_eq!(
-            world.get::<Attacker>(tower).unwrap().target,
+            world.get::<Skill>(tower).unwrap().target,
             None,
             "守卫目标出射程必须丢锁"
         );

@@ -30,7 +30,10 @@ pub struct TowerSpec {
 /// （纳入建筑血量）、终局清理补清建筑，旧录像失同步告警属预期
 /// v10：建筑寿命 Lifetime 组件改 Decay 扣血 buff（血条随时间线性下降、
 /// 被打掉血会提前致死、死期 ±1 tick FP 残差），旧录像建筑死亡时点漂移
-pub const SIM_VERSION: u32 = 10;
+/// v11：Attacker→Skill（Payload+Delivery）+ Projectile/SpellVolley 统一 Strike；
+/// AOE 半径语义统一为 splash+目标半径（法术范围略变大）、法术波结算
+/// 链位后移（按落波帧移动后位置判定），旧录像伤害时点/判定漂移
+pub const SIM_VERSION: u32 = 11;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）

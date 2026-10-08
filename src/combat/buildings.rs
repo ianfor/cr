@@ -81,14 +81,12 @@ mod tests {
         world.spawn((
             Unit::building(Faction::Enemy, 19, 0.6),
             long_decay(),
-            Attacker {
-                damage: 90.0,
-                attack_range: 5.0,
+            Skill {
+                range: 5.0,
                 interval: 0.9,
+                payload: Payload::damage_only(90.0, 0.0, false, false),
+                delivery: Delivery::Homing,
                 cooldown: 0.0,
-                splash_radius: 0.0,
-                hits_air: false,
-                ranged: true,
                 target: None,
                 engaged: false,
             },
@@ -126,8 +124,8 @@ mod tests {
             .filter(|u| u.kind == UnitKind::Troop && u.card == Some(1))
             .count();
         assert_eq!(skeletons, 1, "墓碑 4s 应出 1 只骷髅");
-        // 加农炮已开火：场上存在追踪子弹
-        let mut projectiles = world.query::<&Projectile>();
+        // 加农炮已开火：场上存在在途打击（追踪弹）
+        let mut projectiles = world.query::<&Strike>();
         let fired = projectiles
             .iter(world)
             .filter(|p| p.attacker == Faction::Enemy)
