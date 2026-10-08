@@ -4,8 +4,8 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use crate::components::{
-    faction_color, initial_cooldown_ticks, Delivery, Faction, Health, Payload, Skill, SkillState,
-    Targeting, TargetPolicy, Unit,
+    faction_color, initial_cooldown_ticks, AttackFlow, Delivery, Faction, Health, Payload, Skill,
+    SkillState, TargetSelector, TargetPolicy, Unit,
 };
 use crate::constants::*;
 use crate::health_bar;
@@ -190,21 +190,26 @@ fn spawn_tower(
     };
     let mut root = commands.spawn((
         unit,
-        // 塔的攻击能力：统一走 targeting(Guard)/attacking 系统（远程追踪弹）
-        Skill {
+        // 塔的攻击三件套：守卫选择器 + 流程 + 远程追踪弹效果
+        TargetSelector {
+            policy: TargetPolicy::Guard,
             range: spec.attack_range,
+            hits_air: true,
+            target: None,
+            engaged: false,
+        },
+        AttackFlow {
             interval: ATTACK_INTERVAL,
             windup_secs: spec.windup_secs,
-            payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-            delivery: Delivery::Homing,
             // 首击时序与旧冷却模型对齐：周期 − 前摇
             state: SkillState::Idle {
                 left: initial_cooldown_ticks(ATTACK_INTERVAL, spec.windup_secs),
             },
-            target: None,
-            engaged: false,
         },
-        Targeting(TargetPolicy::Guard),
+        Skill {
+            payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+            delivery: Delivery::Homing,
+        },
         Health::new(spec.hp),
         Transform::from_translation(position),
     ));

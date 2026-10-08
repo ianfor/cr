@@ -42,8 +42,8 @@ pub fn building_spawner(
 #[cfg(test)]
 mod tests {
     use super::super::{
-        attacking, despawn_dead, moving, seek, status_effects, targeting, test_attacker,
-        test_monster, WorldSnaps,
+        attacking, despawn_dead, moving, status_effects, targeting, test_monster, test_skill,
+        WorldSnaps,
     };
     use crate::cards::decay_buff;
     use crate::match_flow::MatchTimer;
@@ -83,25 +83,29 @@ mod tests {
         world.spawn((
             Unit::building(Faction::Enemy, 19, 0.6),
             long_decay(),
-            Skill {
+            TargetSelector {
+                policy: TargetPolicy::Guard,
                 range: 5.0,
-                interval: 0.9,
-                windup_secs: 0.35,
-                payload: Payload::damage_only(90.0, 0.0, false, false),
-                delivery: Delivery::Homing,
-                state: SkillState::Idle { left: 0 },
+                hits_air: false,
                 target: None,
                 engaged: false,
             },
-            Targeting(TargetPolicy::Guard),
+            AttackFlow {
+                interval: 0.9,
+                windup_secs: 0.35,
+                state: SkillState::Idle { left: 0 },
+            },
+            Skill {
+                payload: Payload::damage_only(90.0, 0.0, false, false),
+                delivery: Delivery::Homing,
+            },
             Health::new(1400.0),
             Transform::from_xyz(4.0, 0.7, 5.0),
         ));
         // 蓝方怪走进红方加农炮射程（距离 < 5）
         world.spawn((
             test_monster(Faction::Player),
-            test_attacker(),
-            seek(5.0),
+            test_skill(),
             Mover { speed: 1.5 },
             Health::new(2000.0),
             Transform::from_xyz(4.0, 1.0, 1.0),

@@ -34,7 +34,7 @@ pub fn status_effects(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{moving, seek, targeting, test_attacker, test_monster, WorldSnaps};
+    use super::super::{guard_selector, moving, targeting, test_monster, test_skill, WorldSnaps};
     use super::*;
 
     fn stun_buff(secs: f32) -> ActiveBuff {
@@ -61,16 +61,25 @@ mod tests {
 
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            test_attacker(),
-            Targeting(TargetPolicy::Guard),
+            guard_selector(6.0),
+            AttackFlow {
+                interval: 1.0,
+                windup_secs: 0.35,
+                state: SkillState::Idle {
+                    left: initial_cooldown_ticks(1.0, 0.35),
+                },
+            },
+            Skill {
+                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+                delivery: Delivery::Homing,
+            },
             Health::new(6000.0),
             Transform::from_xyz(0.0, 0.0, 12.5),
         ));
         let e = world
             .spawn((
                 test_monster(Faction::Player),
-                test_attacker(),
-                seek(5.0),
+                test_skill(),
                 Mover { speed: 1.5 },
                 Buffs::new(stun_buff(1.0)),
                 Health::new(2000.0),
@@ -239,16 +248,25 @@ mod tests {
         // 敌方塔做行军目标
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            test_attacker(),
-            Targeting(TargetPolicy::Guard),
+            guard_selector(6.0),
+            AttackFlow {
+                interval: 1.0,
+                windup_secs: 0.35,
+                state: SkillState::Idle {
+                    left: initial_cooldown_ticks(1.0, 0.35),
+                },
+            },
+            Skill {
+                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+                delivery: Delivery::Homing,
+            },
             Health::new(60000.0),
             Transform::from_xyz(0.0, 0.0, 12.5),
         ));
         let e = world
             .spawn((
                 test_monster(Faction::Player),
-                test_attacker(),
-                seek(5.0),
+                test_skill(),
                 Mover { speed: 1.0 },
                 Buffs::new(ActiveBuff {
                         name: "Rage",

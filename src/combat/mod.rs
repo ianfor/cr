@@ -1,12 +1,17 @@
 //! 战斗模块：机制拆分为能力组件 + 小系统（组合优于配置）
 //!
-//! - [`targeting`]：统一索敌（怪物 Seek / 塔与建筑 Guard），每帧构建全场快照
-//! - [`attack`]（attacking）：统一开火（按 Delivery 分近战当场结算/远程发射 Strike、冲锋首击）
+//! 攻击三权分立（各挂一个组件，互不牵连）：
+//! - [`TargetSelector`]（选谁）：targeting 系统执行——锁定/保持/重锁规则，
+//!   每帧构建全场快照（WorldSnaps）供流程/移动复用
+//! - [`AttackFlow`]（何时打）：attacking 系统执行——前摇/出手帧/后摇三态机
+//! - [`Skill`]（打到会怎样）：纯效果规格，出手帧经 resolve_release 执行
+//!   （近战当场 detonate / 远程发射在途 Strike）
+//!
+//! 其他机制系统：
 //! - [`movement`]（moving）：移动（桥道转向/飞行直线/冲锋蓄力/狂暴加速）
 //! - [`status`]（status_effects）：晕眩/狂暴计时（Stun/Rage 组件生命周期）
 //! - [`physics`]：推挤/河道禁入/静态阻挡（飞行单位全部跳过）
 //! - [`strike`]（strike_tick/detonate）：在途打击推进与统一命中结算
-//!   （追踪弹命中/近战直击/法术瞬发/法术波共用 detonate）
 //! - [`buildings`]：建筑寿命自毁/墓碑出兵
 //!
 //! 帧同步确定性：全部系统挂 SimTick 链（lib.rs / sim_env.rs / replay.rs 三处），
@@ -768,30 +773,52 @@ pub(crate) fn test_tower(faction: Faction) -> Unit {
     Unit::tower(faction, 1.0)
 }
 
-/// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 / 0.3s 前摇 / 近战）
+/// 测试用怪物选择器（aggro 白板值；索敌测试可覆盖 aggro_range）
 #[cfg(test)]
-pub(crate) fn test_attacker() -> Skill {
-    Skill {
-        range: 0.75,
-        interval: 1.0,
-        windup_secs: 0.3,
-        payload: Payload::damage_only(100.0, 0.0, false, true),
-        delivery: Delivery::Melee,
-        state: SkillState::Idle {
-            left: initial_cooldown_ticks(1.0, 0.3),
+pub(crate) fn seek(aggro: f32) -> TargetSelector {
+    TargetSelector {
+        policy: TargetPolicy::Seek {
+            aggro_range: aggro,
+            building_only: false,
         },
+        range: 0.75,
+        hits_air: false,
         target: None,
         engaged: false,
     }
 }
 
-/// 测试用怪物索敌策略（aggro 5.0，非只攻建筑）
+/// 测试用守卫选择器（塔/建筑卡原地守卫）
 #[cfg(test)]
-pub(crate) fn seek(aggro: f32) -> Targeting {
-    Targeting(TargetPolicy::Seek {
-        aggro_range: aggro,
-        building_only: false,
-    })
+pub(crate) fn guard_selector(range: f32) -> TargetSelector {
+    TargetSelector {
+        policy: TargetPolicy::Guard,
+        range,
+        hits_air: true,
+        target: None,
+        engaged: false,
+    }
+}
+
+/// 测试用白板攻击三件套（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 /
+/// 0.3s 前摇 / 近战 / aggro 5）。spawn 时解构或嵌套元组直接入 bundle；
+/// 需要自定义策略/数值时先解构改字段再入 bundle
+#[cfg(test)]
+pub(crate) fn test_skill() -> (TargetSelector, AttackFlow, Skill) {
+    (
+        seek(5.0),
+        AttackFlow {
+            interval: 1.0,
+            windup_secs: 0.3,
+            state: SkillState::Idle {
+                left: initial_cooldown_ticks(1.0, 0.3),
+            },
+        },
+        Skill {
+            payload: Payload::damage_only(100.0, 0.0, false, true),
+            delivery: Delivery::Melee,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -808,19 +835,24 @@ mod tests {
         };
         world.spawn((
             unit,
-            Skill {
+            TargetSelector {
+                policy: TargetPolicy::Guard,
                 range: 6.0,
-                interval: 1.0,
-                windup_secs: 0.35,
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
+                hits_air: true,
                 target: None,
                 engaged: false,
             },
-            Targeting(TargetPolicy::Guard),
+            AttackFlow {
+                interval: 1.0,
+                windup_secs: 0.35,
+                state: SkillState::Idle {
+                    left: initial_cooldown_ticks(1.0, 0.35),
+                },
+            },
+            Skill {
+                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+                delivery: Delivery::Homing,
+            },
             Health {
                 current: hp,
                 max: 100.0,
@@ -831,8 +863,7 @@ mod tests {
     fn spawn_monster(world: &mut World, faction: Faction) {
         world.spawn((
             test_monster(faction),
-            test_attacker(),
-            seek(5.0),
+            test_skill(),
             Mover { speed: 1.5 },
             Health::new(100.0),
         ));

@@ -381,7 +381,7 @@ pub fn process_deploying(
 }
 
 /// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）。
-/// 机制全部由能力组件表达：Attacker/Targeting/Mover 必备，Charge/Flying 按卡挂
+/// 机制全部由能力组件表达：TargetSelector/AttackFlow/Skill/Mover 必备，Charge/Flying 按卡挂
 pub fn spawn_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -397,10 +397,26 @@ pub fn spawn_unit(
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
         Unit::troop(faction, card, r, spec.mass),
-        Skill {
+        // 三权分立：选择器（选谁）/ 流程（何时打）/ 效果（打到会怎样）
+        TargetSelector {
+            policy: TargetPolicy::Seek {
+                aggro_range: spec.aggro_range,
+                building_only: spec.building_only,
+            },
             range: spec.attack_range,
+            hits_air: spec.hits_air,
+            target: None,
+            engaged: false,
+        },
+        AttackFlow {
             interval: spec.attack_interval,
             windup_secs: spec.windup_secs,
+            // 首击时序与旧冷却模型对齐：周期 − 前摇
+            state: SkillState::Idle {
+                left: initial_cooldown_ticks(spec.attack_interval, spec.windup_secs),
+            },
+        },
+        Skill {
             // 近战溅射波及塔（旧规则）、远程弹溅不吃塔——hits_towers 显式化
             payload: Payload::damage_only(
                 spec.damage,
@@ -413,17 +429,7 @@ pub fn spawn_unit(
             } else {
                 Delivery::Melee
             },
-            // 首击时序与旧冷却模型对齐：周期 − 前摇
-            state: SkillState::Idle {
-                left: initial_cooldown_ticks(spec.attack_interval, spec.windup_secs),
-            },
-            target: None,
-            engaged: false,
         },
-        Targeting(TargetPolicy::Seek {
-            aggro_range: spec.aggro_range,
-            building_only: spec.building_only,
-        }),
         Mover { speed: spec.speed },
         Health::new(spec.hp),
         Mesh3d(meshes.add(Capsule3d::new(r, 2.0 * r))),
@@ -470,7 +476,7 @@ pub fn decay_buff(hp: f32, lifetime_secs: f32) -> ActiveBuff {
 }
 
 /// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，
-/// 攻击/出兵/寿命分别由 Skill/Spawner/Decay buff 表达；
+/// 攻击/出兵/寿命分别由 TargetSelector+AttackFlow+Skill/Spawner/Decay buff 表达；
 /// 寿命尽头走 despawn_dead 通用死亡路径）
 fn spawn_building(
     commands: &mut Commands,
@@ -485,7 +491,6 @@ fn spawn_building(
     let mut e = commands.spawn((
         Unit::building(faction, card, r),
         Buffs::new(decay_buff(spec.hp, spec.lifetime_secs)),
-        Targeting(TargetPolicy::Guard),
         Health::new(spec.hp),
         Mesh3d(meshes.add(Cuboid::new(2.0 * r, 1.4, 2.0 * r))),
         MeshMaterial3d(materials.add(faction_color(faction).darker(0.15))),
@@ -493,16 +498,24 @@ fn spawn_building(
     ));
     // 加农炮类攻击能力（首冷却 0：有敌即摇前摇开火，之后按周期）
     if let Some(a) = &spec.attack {
-        e.insert(Skill {
-            range: a.range,
-            interval: a.interval,
-            windup_secs: a.windup_secs,
-            payload: Payload::damage_only(a.damage, 0.0, a.hits_air, false),
-            delivery: Delivery::Homing,
-            state: SkillState::Idle { left: 0 },
-            target: None,
-            engaged: false,
-        });
+        e.insert((
+            TargetSelector {
+                policy: TargetPolicy::Guard,
+                range: a.range,
+                hits_air: a.hits_air,
+                target: None,
+                engaged: false,
+            },
+            AttackFlow {
+                interval: a.interval,
+                windup_secs: a.windup_secs,
+                state: SkillState::Idle { left: 0 },
+            },
+            Skill {
+                payload: Payload::damage_only(a.damage, 0.0, a.hits_air, false),
+                delivery: Delivery::Homing,
+            },
+        ));
     }
     // 墓碑类出兵能力（冷却从间隔起：落地 interval 秒后出第一只）
     if let Some(s) = &spec.spawner {
@@ -710,8 +723,9 @@ mod tests {
         assert_eq!(spawned.len(), spec.count as usize);
         let skill = world.get::<Skill>(spawned[0]).unwrap();
         assert_eq!(skill.payload.damage, ms.damage);
-        assert_eq!(skill.interval, ms.attack_interval);
-        assert!(world.get::<Targeting>(spawned[0]).is_some());
+        let flow = world.get::<AttackFlow>(spawned[0]).unwrap();
+        assert_eq!(flow.interval, ms.attack_interval);
+        assert!(world.get::<TargetSelector>(spawned[0]).is_some());
         assert!(world.get::<Mover>(spawned[0]).is_some());
     }
 

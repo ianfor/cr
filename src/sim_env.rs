@@ -1026,22 +1026,27 @@ mod tests {
                 let z = (next() % 2000) as f32 / 100.0 - 10.0;
                 world.spawn((
                     Unit::troop(faction, 0, 0.5, 1.0),
-                    Skill {
-                        range: 0.75,
-                        interval: 1.0,
-                        windup_secs: 0.3,
-                        payload: Payload::damage_only(100.0, 0.0, false, true),
-                        delivery: Delivery::Melee,
-                        state: SkillState::Idle {
-                            left: initial_cooldown_ticks(1.0, 0.3),
+                    TargetSelector {
+                        policy: TargetPolicy::Seek {
+                            aggro_range: 5.0,
+                            building_only: false,
                         },
+                        range: 0.75,
+                        hits_air: false,
                         target: None,
                         engaged: false,
                     },
-                    Targeting(TargetPolicy::Seek {
-                        aggro_range: 5.0,
-                        building_only: false,
-                    }),
+                    AttackFlow {
+                        interval: 1.0,
+                        windup_secs: 0.3,
+                        state: SkillState::Idle {
+                            left: initial_cooldown_ticks(1.0, 0.3),
+                        },
+                    },
+                    Skill {
+                        payload: Payload::damage_only(100.0, 0.0, false, true),
+                        delivery: Delivery::Melee,
+                    },
                     Mover { speed: 2.0 },
                     Health {
                         current: 1e9,

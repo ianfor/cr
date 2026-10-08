@@ -186,32 +186,13 @@ pub enum SkillState {
     Recover { left: u32 },
 }
 
-/// 攻击能力：射程/攻速/结算负载/投放方式 + 运行时目标与过程状态。
-/// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用同一套开火逻辑；
-/// 命中结算是统一的 detonate（strike 模块）
-#[derive(Component)]
-pub struct Skill {
-    /// 攻击范围（边缘距离；索敌/移动/开火三方共用）
-    pub range: f32,
-    /// 攻击间隔（秒）——两次命中的完整周期（含前摇后摇）
-    pub interval: f32,
-    /// 前摇时长（秒）：出手帧前的动作时间，攻速 buff 同步缩短
-    pub windup_secs: f32,
-    pub payload: Payload,
-    pub delivery: Delivery,
-    /// 攻击过程状态（冷却合并在 Idle.left 里）
-    pub state: SkillState,
-    /// 锁定的攻击目标
-    pub target: Option<Entity>,
-    /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
-    /// 交战中锁定不换目标（防距离抖动 flip-flop，对齐 CR）
-    pub engaged: bool,
-}
+// ===== 攻击三权分立 =====
+// 普攻拆为三个互不牵连的关注点，各挂一个组件：
+//   TargetSelector（选谁）→ AttackFlow（何时打）→ Skill（打到会怎样）
+// 选择器只写 target/engaged；流程只推进 SkillState；效果只是纯规格。
+// 系统间靠帧同步链顺序保证一致视图，无跨系统共享可变状态。
 
-/// 索敌策略：怪物主动寻敌（含建筑兜底），塔/建筑原地守卫
-#[derive(Component)]
-pub struct Targeting(pub TargetPolicy);
-
+/// 目标选择策略：怪物主动寻敌（含建筑兜底），塔/建筑原地守卫
 pub enum TargetPolicy {
     /// 怪物：aggro 内最近目标（塔/怪/建筑一视同仁）；交战锁定；
     /// 未交战每帧重评；aggro 内无目标 → 全场最近敌方建筑为行军方向。
@@ -222,6 +203,43 @@ pub enum TargetPolicy {
     },
     /// 塔/建筑卡：射程内最近敌方怪物，目标出射程即丢锁（原地不动）
     Guard,
+}
+
+/// 目标选择器：怎么选目标（锁定谁、何时保持/失效/重锁）
+#[derive(Component)]
+pub struct TargetSelector {
+    pub policy: TargetPolicy,
+    /// 攻击范围（边缘距离）：锁定保持判定 + 流程系统"在射程内"判定共用
+    pub range: f32,
+    /// 能否选中空中单位（选择侧过滤）。与 payload.hits_air 解耦——
+    /// 当前各卡同值，将来"能选空军但溅射对地"类卡可独立表达
+    pub hits_air: bool,
+    /// 锁定的攻击目标（唯一写者：targeting 系统）
+    pub target: Option<Entity>,
+    /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
+    /// 交战中锁定不换目标（防距离抖动 flip-flop，对齐 CR）
+    pub engaged: bool,
+}
+
+/// 执行流程控制：什么时候打（纯计时，不知道效果是什么）。
+/// 前摇/出手帧/后摇三态循环，冷却合并在 Idle.left
+#[derive(Component)]
+pub struct AttackFlow {
+    /// 攻击间隔（秒）——两次命中的完整周期（含前摇后摇）
+    pub interval: f32,
+    /// 前摇时长（秒）：出手帧前的动作时间，攻速 buff 同步缩短；
+    /// 进 Windup 时量化为 tick 冻结
+    pub windup_secs: f32,
+    pub state: SkillState,
+}
+
+/// 结算效果：打到会怎样（纯规格，不知道何时打）。
+/// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用；
+/// 命中执行是统一的 detonate（strike 模块）
+#[derive(Component)]
+pub struct Skill {
+    pub payload: Payload,
+    pub delivery: Delivery,
 }
 
 /// 移动能力（塔/建筑没有）：朝目标移动，过河走桥
