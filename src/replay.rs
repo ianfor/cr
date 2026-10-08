@@ -162,6 +162,7 @@ pub fn reset_world(world: &mut World) {
     *world.resource_mut::<MatchTimer>() = MatchTimer::default();
     *world.resource_mut::<OwnHashes>() = OwnHashes::default();
     *world.resource_mut::<CommandLog>() = CommandLog::default();
+    *world.resource_mut::<crate::combat::ReleaseLog>() = crate::combat::ReleaseLog::default();
     world.remove_resource::<FireworksActive>();
     let _ = world.try_run_schedule(Startup);
 }
@@ -293,6 +294,7 @@ mod tests {
             .init_resource::<ReplayLog>()
             .init_resource::<ReplayControl>()
             .init_resource::<combat::ProjectileAssets>()
+            .init_resource::<combat::ReleaseLog>()
             .init_resource::<combat::WorldSnaps>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()

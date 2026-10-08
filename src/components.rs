@@ -4,6 +4,20 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use crate::constants::TICK_DT;
+
+/// 秒 → tick 数（round 量化，≥1；帧同步两端同算逐比特一致）
+pub fn ticks_per_secs(secs: f32) -> u32 {
+    ((secs / TICK_DT).round() as u32).max(1)
+}
+
+/// 出生首冷却（tick）= 周期 − 前摇：首击时序与旧冷却模型对齐
+/// （旧 spawn cooldown=interval，进射程倒数到 0 立即命中；
+/// 新模型倒数 cycle−W 后再摇 W 前摇，总量一致，量化差 ±1 tick）
+pub fn initial_cooldown_ticks(interval_secs: f32, windup_secs: f32) -> u32 {
+    ticks_per_secs(interval_secs).saturating_sub(ticks_per_secs(windup_secs))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Faction {
     Player,
@@ -154,19 +168,39 @@ pub enum Delivery {
     Homing,
 }
 
-/// 攻击能力：射程/攻速/结算负载/投放方式 + 运行时目标与冷却。
+/// 攻击过程状态机：普攻是一个动作过程（前摇→出手帧→后摇），
+/// 不再是"冷却转完同 tick 立即结算"。
+/// 三态循环（连续站桩输出）：Release → Recover(R) → Idle(cycle−W−R)
+/// → Windup(W) → Release，release→release = cycle = interval/攻速（DPS 守恒）。
+/// 全部时长用 u32 tick 倒数（进入 Windup 时一次性量化冻结，无 f32 累加残差）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkillState {
+    /// 待机：剩余冷却 tick。目标在射程内才流逝（行军途中不回复）；
+    /// 归零且有有效目标 → 进 Windup
+    Idle { left: u32 },
+    /// 前摇：锁移动 + 锁目标（已 commit 的出手不被推挤打断）。
+    /// 被晕/缴械 → 取消回 Idle{0}（白摇）；归零 → Release 结算 → Recover
+    Windup { left: u32 },
+    /// 后摇：可移动（走A），不可出手、索敌冻结；
+    /// 归零 → Idle{剩余冷却}
+    Recover { left: u32 },
+}
+
+/// 攻击能力：射程/攻速/结算负载/投放方式 + 运行时目标与过程状态。
 /// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用同一套开火逻辑；
 /// 命中结算是统一的 detonate（strike 模块）
 #[derive(Component)]
 pub struct Skill {
     /// 攻击范围（边缘距离；索敌/移动/开火三方共用）
     pub range: f32,
-    /// 攻击间隔（秒）
+    /// 攻击间隔（秒）——两次命中的完整周期（含前摇后摇）
     pub interval: f32,
+    /// 前摇时长（秒）：出手帧前的动作时间，攻速 buff 同步缩短
+    pub windup_secs: f32,
     pub payload: Payload,
     pub delivery: Delivery,
-    /// 攻击冷却（秒，倒计数；仅在目标进入射程后流逝）
-    pub cooldown: f32,
+    /// 攻击过程状态（冷却合并在 Idle.left 里）
+    pub state: SkillState,
     /// 锁定的攻击目标
     pub target: Option<Entity>,
     /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；

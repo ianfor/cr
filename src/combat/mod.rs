@@ -645,6 +645,12 @@ pub fn spell_fx_update(
     }
 }
 
+/// 出手记录（模拟侧确定性追加）：(帧号, 攻击者实体, 目标位置)。
+/// 纯表现层 attack_action_fx 增量消费播放出手闪光（cursor 模式，
+/// 回放/追帧自动正确）；reset_world 清空。不进哈希、不影响模拟
+#[derive(Resource, Default)]
+pub struct ReleaseLog(pub Vec<(u32, Entity, Vec3)>);
+
 // ===== 测试辅助 =====
 
 /// 测试用白板骑士部队 Unit（纯物理属性，机制全部由能力组件表达）
@@ -659,15 +665,18 @@ pub(crate) fn test_tower(faction: Faction) -> Unit {
     Unit::tower(faction, 1.0)
 }
 
-/// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 / 近战）
+/// 测试用白板攻击能力（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 / 0.3s 前摇 / 近战）
 #[cfg(test)]
 pub(crate) fn test_attacker() -> Skill {
     Skill {
         range: 0.75,
         interval: 1.0,
+        windup_secs: 0.3,
         payload: Payload::damage_only(100.0, 0.0, false, true),
         delivery: Delivery::Melee,
-        cooldown: 1.0,
+        state: SkillState::Idle {
+            left: initial_cooldown_ticks(1.0, 0.3),
+        },
         target: None,
         engaged: false,
     }
@@ -699,9 +708,12 @@ mod tests {
             Skill {
                 range: 6.0,
                 interval: 1.0,
+                windup_secs: 0.35,
                 payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
                 delivery: Delivery::Homing,
-                cooldown: 1.0,
+                state: SkillState::Idle {
+                    left: initial_cooldown_ticks(1.0, 0.35),
+                },
                 target: None,
                 engaged: false,
             },

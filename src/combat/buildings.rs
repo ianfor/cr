@@ -61,6 +61,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<super::super::ProjectileAssets>()
+            .init_resource::<super::super::ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>()
             .init_resource::<MatchTimer>();
         let world = app.world_mut();
@@ -84,9 +86,10 @@ mod tests {
             Skill {
                 range: 5.0,
                 interval: 0.9,
+                windup_secs: 0.35,
                 payload: Payload::damage_only(90.0, 0.0, false, false),
                 delivery: Delivery::Homing,
-                cooldown: 0.0,
+                state: SkillState::Idle { left: 0 },
                 target: None,
                 engaged: false,
             },

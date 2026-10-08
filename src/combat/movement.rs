@@ -29,6 +29,11 @@ pub fn moving(
             }
             continue;
         }
+        // 前摇锁移动（站定出手，CR 正统）：蓄力也暂停，
+        // 后摇可移动（走A），冷却段照常追击
+        if matches!(skill.state, SkillState::Windup { .. }) {
+            continue;
+        }
         let Some(target_entity) = skill.target else {
             continue;
         };

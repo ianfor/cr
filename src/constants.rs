@@ -11,6 +11,8 @@ pub struct TowerSpec {
     pub bar_y: f32,
     /// 索敌/攻击范围（按边缘距离算）
     pub attack_range: f32,
+    /// 前摇时长（秒）：箭离弦前的瞄准时间
+    pub windup_secs: f32,
     /// 是否国王塔（被摧毁即输掉对局）
     pub is_king: bool,
 }
@@ -33,7 +35,10 @@ pub struct TowerSpec {
 /// v11：Attacker→Skill（Payload+Delivery）+ Projectile/SpellVolley 统一 Strike；
 /// AOE 半径语义统一为 splash+目标半径（法术范围略变大）、法术波结算
 /// 链位后移（按落波帧移动后位置判定），旧录像伤害时点/判定漂移
-pub const SIM_VERSION: u32 = 11;
+/// v12：Skill 冷却改 SkillState 三态过程（前摇锁移动→出手帧结算→后摇
+/// 可走A）；命中时点从"冷却完立即"变为"冷却完+前摇"，晕可打断前摇
+/// （白摇），旧录像伤害时点漂移
+pub const SIM_VERSION: u32 = 12;
 /// 模拟帧率：所有客户端按同一固定步长推进
 pub const TICKS_PER_SEC: f64 = 30.0;
 /// 每帧固定步长（模拟中禁止用 delta_secs，必须用它）
@@ -67,6 +72,9 @@ pub const TOWER_Z: f32 = 12.5;
 pub const PRINCESS_X: f32 = 6.5;
 /// 公主塔纵向位置（也是推塔后部署扩张区的纵深上限）
 pub const PRINCESS_Z: f32 = 8.5;
+
+/// 后摇占攻击周期的比例（其余为冷却等待；前摇逐卡数据、周期守恒保 DPS）
+pub const RECOVER_FRAC: f32 = 0.15;
 
 // 战斗常量
 pub const TOWER_HP: f32 = 10000.0;
@@ -119,6 +127,9 @@ pub struct MonsterSpec {
     pub ranged: bool,
     /// 攻击间隔（秒）——各卡独立，骑士 1.0s 为数值锚
     pub attack_interval: f32,
+    /// 前摇时长（秒）：出手帧前的动作时间（挥剑/拉弓/施法），
+    /// 攻速 buff 同步缩短；进 Windup 时量化为 tick 冻结
+    pub windup_secs: f32,
     /// 溅射半径（0 = 单体伤害）
     pub splash_radius: f32,
     /// 能否攻击空中单位
@@ -131,7 +142,8 @@ pub struct MonsterSpec {
     pub charge: Option<ChargeSpec>,
 }
 
-/// MonsterSpec 便捷构造（const 上下文用），未列字段取默认值
+/// MonsterSpec 便捷构造（const 上下文用），未列字段取默认值；
+/// windup = 前摇秒数
 const fn m(
     hp: f32,
     damage: f32,
@@ -142,6 +154,7 @@ const fn m(
     mass: f32,
     ranged: bool,
     attack_interval: f32,
+    windup: f32,
 ) -> MonsterSpec {
     MonsterSpec {
         hp,
@@ -153,6 +166,7 @@ const fn m(
         mass,
         ranged,
         attack_interval,
+        windup_secs: windup,
         splash_radius: 0.0,
         hits_air: ranged,
         flying: false,
@@ -199,6 +213,8 @@ pub struct BuildingAttack {
     /// 攻击范围（边缘距离，从建筑半径外缘起算）
     pub range: f32,
     pub interval: f32,
+    /// 前摇时长（秒）
+    pub windup_secs: f32,
     pub hits_air: bool,
 }
 
@@ -244,39 +260,39 @@ pub struct CardSpec {
 pub const CARDS: [CardSpec; 21] = [
     // ===== 地面基础 =====
     // 骑士【锚】
-    CardSpec { id: 0, name: "Knight", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(2000.0, 100.0, 0.75, 5.0, 1.5, 0.5, 1.0, false, 1.0)) },
+    CardSpec { id: 0, name: "Knight", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(2000.0, 100.0, 0.75, 5.0, 1.5, 0.5, 1.0, false, 1.0, 0.30)) },
     // 骷髅军团
-    CardSpec { id: 1, name: "Skeletons", cost: 1.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(300.0, 50.0, 0.45, 2.0, 2.0, 0.3, 0.3, false, 1.0)) },
+    CardSpec { id: 1, name: "Skeletons", cost: 1.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(300.0, 50.0, 0.45, 2.0, 2.0, 0.3, 0.3, false, 1.0, 0.20)) },
     // 火枪手（对空）
-    CardSpec { id: 2, name: "Musketeer", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1000.0, 120.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.0)) },
+    CardSpec { id: 2, name: "Musketeer", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1000.0, 120.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.0, 0.30)) },
     // 巨人：只攻击建筑（对齐真 CR）
-    CardSpec { id: 3, name: "Giant", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(5000.0, 150.0, 1.2, 5.0, 1.0, 0.8, 3.0, false, 1.5) }) },
+    CardSpec { id: 3, name: "Giant", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(5000.0, 150.0, 1.2, 5.0, 1.0, 0.8, 3.0, false, 1.5, 0.50) }) },
     // 哥布林
-    CardSpec { id: 4, name: "Goblins", cost: 2.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(360.0, 70.0, 0.45, 2.0, 2.5, 0.3, 0.4, false, 1.1)) },
+    CardSpec { id: 4, name: "Goblins", cost: 2.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(m(360.0, 70.0, 0.45, 2.0, 2.5, 0.3, 0.4, false, 1.1, 0.20)) },
     // 弓箭手（对空）
-    CardSpec { id: 5, name: "Archers", cost: 3.0, count: 2, deploy_ticks: 30, kind: CardKind::Troop(m(450.0, 80.0, 4.0, 5.0, 1.5, 0.4, 0.6, true, 1.2)) },
+    CardSpec { id: 5, name: "Archers", cost: 3.0, count: 2, deploy_ticks: 30, kind: CardKind::Troop(m(450.0, 80.0, 4.0, 5.0, 1.5, 0.4, 0.6, true, 1.2, 0.25)) },
     // 迷你皮卡：慢攻速重击
-    CardSpec { id: 6, name: "MiniPEKKA", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1600.0, 350.0, 0.75, 5.0, 2.0, 0.5, 1.2, false, 1.8)) },
+    CardSpec { id: 6, name: "MiniPEKKA", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(m(1600.0, 350.0, 0.75, 5.0, 2.0, 0.5, 1.2, false, 1.8, 0.40)) },
     // 野蛮人
-    CardSpec { id: 7, name: "Barbarians", cost: 5.0, count: 4, deploy_ticks: 30, kind: CardKind::Troop(m(900.0, 100.0, 0.7, 5.0, 1.5, 0.45, 1.0, false, 1.4)) },
+    CardSpec { id: 7, name: "Barbarians", cost: 5.0, count: 4, deploy_ticks: 30, kind: CardKind::Troop(m(900.0, 100.0, 0.7, 5.0, 1.5, 0.45, 1.0, false, 1.4, 0.35)) },
     // ===== 只攻击建筑 =====
     // 野猪骑士：快攻
-    CardSpec { id: 8, name: "HogRider", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(1600.0, 150.0, 0.9, 5.0, 2.5, 0.5, 1.2, false, 1.6) }) },
+    CardSpec { id: 8, name: "HogRider", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { building_only: true, ..m(1600.0, 150.0, 0.9, 5.0, 2.5, 0.5, 1.2, false, 1.6, 0.30) }) },
     // ===== 冲锋 =====
     // 王子：蓄力 2.5s → 移速×2、首击伤害×2（400）；受击不清零，攻击命中或被晕眩才清
-    CardSpec { id: 9, name: "Prince", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { charge: Some(ChargeSpec { windup_secs: 2.5, speed_mult: 2.0, damage_mult: 2.0 }), ..m(1900.0, 200.0, 0.9, 5.0, 1.5, 0.55, 1.5, false, 1.4) }) },
+    CardSpec { id: 9, name: "Prince", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { charge: Some(ChargeSpec { windup_secs: 2.5, speed_mult: 2.0, damage_mult: 2.0 }), ..m(1900.0, 200.0, 0.9, 5.0, 1.5, 0.55, 1.5, false, 1.4, 0.35) }) },
     // ===== AOE =====
     // 炸弹人：溅射仅对地
-    CardSpec { id: 10, name: "Bomber", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(400.0, 190.0, 3.5, 4.5, 1.5, 0.35, 0.5, true, 1.9) }) },
+    CardSpec { id: 10, name: "Bomber", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(400.0, 190.0, 3.5, 4.5, 1.5, 0.35, 0.5, true, 1.9, 0.40) }) },
     // 瓦基丽：360° 近战溅射仅对地
-    CardSpec { id: 11, name: "Valkyrie", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(1800.0, 210.0, 0.9, 5.0, 1.5, 0.55, 1.2, false, 1.5) }) },
+    CardSpec { id: 11, name: "Valkyrie", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.5, hits_air: false, ..m(1800.0, 210.0, 0.9, 5.0, 1.5, 0.55, 1.2, false, 1.5, 0.35) }) },
     // 法师：远程溅射对空对地
-    CardSpec { id: 12, name: "Wizard", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, ..m(1100.0, 182.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.4) }) },
+    CardSpec { id: 12, name: "Wizard", cost: 5.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, ..m(1100.0, 182.0, 4.0, 5.0, 1.5, 0.5, 0.8, true, 1.4, 0.40) }) },
     // ===== 空军 =====
     // 亡灵：飞行近战，可对空
-    CardSpec { id: 13, name: "Minions", cost: 3.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { flying: true, hits_air: true, ..m(320.0, 80.0, 0.45, 3.0, 2.0, 0.3, 0.3, false, 1.0) }) },
+    CardSpec { id: 13, name: "Minions", cost: 3.0, count: 3, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { flying: true, hits_air: true, ..m(320.0, 80.0, 0.45, 3.0, 2.0, 0.3, 0.3, false, 1.0, 0.20) }) },
     // 飞龙：飞行远程溅射，对空对地
-    CardSpec { id: 14, name: "BabyDragon", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, flying: true, ..m(1200.0, 160.0, 2.5, 4.0, 1.5, 0.6, 0.8, true, 1.6) }) },
+    CardSpec { id: 14, name: "BabyDragon", cost: 4.0, count: 1, deploy_ticks: 30, kind: CardKind::Troop(MonsterSpec { splash_radius: 1.2, flying: true, ..m(1200.0, 160.0, 2.5, 4.0, 1.5, 0.6, 0.8, true, 1.6, 0.35) }) },
     // ===== 法术（瞬发，全场任意格子）=====
     CardSpec { id: 15, name: "Zap", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 160.0, radius: 1.2, stun_secs: 0.5, rage: None, waves: 1 }) },
     CardSpec { id: 16, name: "Arrows", cost: 3.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 300.0, radius: 2.0, stun_secs: 0.0, rage: None, waves: 3 }) },
@@ -285,7 +301,7 @@ pub const CARDS: [CardSpec; 21] = [
     CardSpec { id: 18, name: "Rage", cost: 2.0, count: 0, deploy_ticks: 0, kind: CardKind::Spell(SpellSpec { damage: 0.0, radius: 3.0, stun_secs: 0.0, rage: Some(RageSpec { pct: 0.35, secs: 6.0 }), waves: 1 }) },
     // ===== 建筑（仅己方半场可部署，有寿命）=====
     // 加农炮：仅对地
-    CardSpec { id: 19, name: "Cannon", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 1400.0, lifetime_secs: 30.0, attack: Some(BuildingAttack { damage: 90.0, range: 5.0, interval: 0.9, hits_air: false }), spawner: None }) },
+    CardSpec { id: 19, name: "Cannon", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 1400.0, lifetime_secs: 30.0, attack: Some(BuildingAttack { damage: 90.0, range: 5.0, interval: 0.9, windup_secs: 0.35, hits_air: false }), spawner: None }) },
     // 墓碑：每 4s 出 1 骷髅
     CardSpec { id: 20, name: "Tombstone", cost: 3.0, count: 1, deploy_ticks: 30, kind: CardKind::Building(BuildingSpec { hp: 800.0, lifetime_secs: 30.0, attack: None, spawner: Some(BuildingSpawner { interval_secs: 4.0, card_id: 1 }) }) },
 ];
@@ -311,6 +327,7 @@ pub const KING_TOWER: TowerSpec = TowerSpec {
     bar_y: 4.3,
     // 刚好覆盖"攻击公主塔的位置"（国王塔到公主塔 7.63，扣半径）
     attack_range: 6.0,
+    windup_secs: 0.35,
     is_king: true,
 };
 
@@ -324,5 +341,6 @@ pub const PRINCESS_TOWER: TowerSpec = TowerSpec {
     bar_y: 3.8,
     // 只守塔周边：桥上（边缘距 7.2）打不到；也打不到攻击对面公主塔的怪（9.25）
     attack_range: 6.0,
+    windup_secs: 0.35,
     is_king: false,
 };

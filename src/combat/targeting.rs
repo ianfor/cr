@@ -66,6 +66,12 @@ pub fn targeting(
         if buffs.map(|b| b.channels().cannot_seek).unwrap_or(false) {
             continue;
         }
+        // 出手过程（前摇/后摇）索敌全冻结：失效判定与重锁都跳过——
+        // 否则前摇中被推挤出射程会永久打断出手（已 commit 必须打完）；
+        // 死锁在出手帧自行落空（whiff），后摇结束回 Idle 由这里清理重锁
+        if !matches!(skill.state, SkillState::Idle { .. }) {
+            continue;
+        }
         let pos = transform.translation;
         let faction = unit.faction;
         let self_radius = unit.radius;
@@ -230,6 +236,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<crate::combat::ProjectileAssets>()
+            .init_resource::<crate::combat::ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>();
         app
     }
@@ -254,9 +262,12 @@ mod tests {
                 Skill {
                     range: 6.0,
                     interval: 1.0,
+                    windup_secs: 0.35,
                     payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
                     delivery: Delivery::Homing,
-                    cooldown: 1.0,
+                    state: SkillState::Idle {
+                        left: initial_cooldown_ticks(1.0, 0.35),
+                    },
                     target: None,
                     engaged: false,
                 },

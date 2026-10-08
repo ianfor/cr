@@ -122,6 +122,8 @@ pub fn run_app() {
     .init_resource::<ReplayLog>()
     .init_resource::<ReplayControl>()
     .init_resource::<combat::ProjectileAssets>()
+    // 出手记录：attack_action_fx 增量消费播放出手闪光
+    .init_resource::<combat::ReleaseLog>()
     // 全场单位快照：targeting 每帧写入，attacking/moving 读取
     .init_resource::<combat::WorldSnaps>()
     // 帧同步：固定 30Hz 模拟帧率

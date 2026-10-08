@@ -4,7 +4,8 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 
 use crate::components::{
-    faction_color, Delivery, Faction, Health, Payload, Skill, Targeting, TargetPolicy, Unit,
+    faction_color, initial_cooldown_ticks, Delivery, Faction, Health, Payload, Skill, SkillState,
+    Targeting, TargetPolicy, Unit,
 };
 use crate::constants::*;
 use crate::health_bar;
@@ -193,9 +194,13 @@ fn spawn_tower(
         Skill {
             range: spec.attack_range,
             interval: ATTACK_INTERVAL,
+            windup_secs: spec.windup_secs,
             payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
             delivery: Delivery::Homing,
-            cooldown: ATTACK_INTERVAL,
+            // 首击时序与旧冷却模型对齐：周期 − 前摇
+            state: SkillState::Idle {
+                left: initial_cooldown_ticks(ATTACK_INTERVAL, spec.windup_secs),
+            },
             target: None,
             engaged: false,
         },

@@ -400,6 +400,7 @@ pub fn spawn_unit(
         Skill {
             range: spec.attack_range,
             interval: spec.attack_interval,
+            windup_secs: spec.windup_secs,
             // 近战溅射波及塔（旧规则）、远程弹溅不吃塔——hits_towers 显式化
             payload: Payload::damage_only(
                 spec.damage,
@@ -412,7 +413,10 @@ pub fn spawn_unit(
             } else {
                 Delivery::Melee
             },
-            cooldown: spec.attack_interval,
+            // 首击时序与旧冷却模型对齐：周期 − 前摇
+            state: SkillState::Idle {
+                left: initial_cooldown_ticks(spec.attack_interval, spec.windup_secs),
+            },
             target: None,
             engaged: false,
         },
@@ -487,14 +491,15 @@ fn spawn_building(
         MeshMaterial3d(materials.add(faction_color(faction).darker(0.15))),
         Transform::from_translation(pos + Vec3::Y * 0.7),
     ));
-    // 加农炮类攻击能力（冷却从 0 起：有敌即开火，之后按间隔）
+    // 加农炮类攻击能力（首冷却 0：有敌即摇前摇开火，之后按周期）
     if let Some(a) = &spec.attack {
         e.insert(Skill {
             range: a.range,
             interval: a.interval,
+            windup_secs: a.windup_secs,
             payload: Payload::damage_only(a.damage, 0.0, a.hits_air, false),
             delivery: Delivery::Homing,
-            cooldown: 0.0,
+            state: SkillState::Idle { left: 0 },
             target: None,
             engaged: false,
         });

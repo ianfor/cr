@@ -1,11 +1,15 @@
-//! 统一开火：怪物/塔/建筑卡共用一套攻击逻辑。
+//! 统一开火：怪物/塔/建筑卡共用一套攻击过程。
 //!
-//! - 近战（Melee）：当场以自身位置为中心 detonate（直击 + 溅射一次结算）
-//! - 远程（Homing）：发射在途 Strike（payload 随弹携带，命中结算见 strike 模块）
-//! - 冲锋首击：伤害×蓄力倍率，命中后蓄力清零
-//! - 攻击冷却只在目标进入射程后流逝（行军途中不回复）；
-//!   狂暴加速攻击节奏（冷却步长 ÷mult）
-//! - 进攻击范围 → 置 engaged（交战）：锁定从此不被抢走，直到被打断
+//! 普攻是一个动作过程（SkillState 三态），不是"冷却转完同 tick 立即结算"：
+//! - Idle：冷却倒数（目标在射程内才流逝，行军不回复），归零 → 进前摇
+//! - Windup（前摇）：锁移动+锁目标，被晕/缴械 → 取消回 Idle{0}（白摇）；
+//!   归零 → 出手帧结算（近战当场 detonate / 远程发射在途 Strike）
+//! - Recover（后摇）：可移动（走A），不可出手；归零 → Idle{剩余冷却}
+//!
+//! 周期守恒：Release → Recover(R) → Idle(cycle−W−R) → Windup(W) → Release，
+//! release→release = cycle = interval/攻速（DPS 与旧模型一致）。
+//! 出手帧不重新判距离（已 commit 必中，CR 亦然）；目标已死 → 落空进后摇。
+//! 冲锋首击：出手帧伤害×蓄力倍率，命中后蓄力清零。
 
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
@@ -14,12 +18,37 @@ use crate::components::*;
 use crate::constants::*;
 
 use super::strike::{detonate, projectile_assets};
-use super::{edge_dist, ProjectileAssets, WorldSnaps};
+use super::{edge_dist, ProjectileAssets, ReleaseLog, WorldSnaps};
+
+/// 攻速合成（狂暴等数值 buff 从这里进来）
+fn attack_rate(buffs: Option<&Buffs>) -> f32 {
+    buffs
+        .map(|b| b.stat(1.0, StatKind::AttackSpeed))
+        .unwrap_or(1.0)
+}
+
+/// 攻击周期（tick，攻速 buff 同步缩短）
+fn cycle_ticks(skill: &Skill, rate: f32) -> u32 {
+    ticks_per_secs(skill.interval / rate)
+}
+
+/// 前摇时长（tick）
+fn windup_ticks(skill: &Skill, rate: f32) -> u32 {
+    ticks_per_secs(skill.windup_secs / rate)
+}
+
+/// 后摇时长（tick）：周期 × RECOVER_FRAC（保底 ≥1，极端短周期卡）
+fn recover_ticks(cycle: u32) -> u32 {
+    (((cycle as f32) * RECOVER_FRAC).round() as u32).max(1)
+}
 
 pub fn attacking(
     mut commands: Commands,
     snaps: Res<WorldSnaps>,
+    tick: Res<Tick>,
+    mut release_log: ResMut<ReleaseLog>,
     mut units: Query<(
+        Entity,
         &mut Skill,
         &Transform,
         &Unit,
@@ -40,85 +69,137 @@ pub fn attacking(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut skill, transform, unit, mut charge, buffs) in &mut units {
-        // 禁攻击（眩晕/缴械）：实时查询 buff 标志位，无派生缓存
+    for (entity, mut skill, transform, unit, mut charge, buffs) in &mut units {
+        // 禁攻击（眩晕/缴械）：实时查询 buff 标志位，无派生缓存。
+        // 前摇中被控 = 白摇取消（CR 正统）；Idle/Recover 静置不流逝
         if buffs.map(|b| b.channels().cannot_attack).unwrap_or(false) {
+            if let SkillState::Windup { .. } = skill.state {
+                skill.state = SkillState::Idle { left: 0 };
+            }
             continue;
         }
-        let Some(target_entity) = skill.target else {
-            continue;
-        };
-        // 点查表 O(1)（替代旧的 O(n) 线性 find）
-        let Some(&i) = snaps.index.get(&target_entity) else {
-            continue; // 目标不在快照中（本帧已被清除）
-        };
-        let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
         let faction = unit.faction;
         let self_radius = unit.radius;
 
-        let edge = edge_dist(pos, self_radius, target.pos, target.radius);
-        if edge > skill.range + 0.05 {
-            continue; // 不在射程：交给移动系统接近
-        }
-        skill.engaged = true;
-
-        // 攻速 = 属性修饰器合成（狂暴等数值 buff 都从这里进来）
-        let rate = buffs
-            .map(|b| b.stat(1.0, StatKind::AttackSpeed))
-            .unwrap_or(1.0);
-        let dt = TICK_DT / rate;
-        skill.cooldown -= dt;
-        if skill.cooldown > 0.0 {
-            continue;
-        }
-        skill.cooldown = skill.interval;
-
-        // 冲锋首击：负载伤害×蓄力倍率，命中后蓄力清零
-        // （直击与溅射共用同一份修改后的负载）
-        let mut payload = skill.payload.clone();
-        if let Some(c) = charge.as_deref_mut() {
-            if c.charged() {
-                payload.damage *= c.damage_mult;
-                c.progress = 0.0;
-            }
-        }
-
-        match skill.delivery {
-            // 近战：当场以自身位置为中心结算（直击 primary + 360° 溅射）
-            Delivery::Melee => {
-                detonate(
-                    &mut commands,
-                    &mut targets,
-                    &payload,
-                    faction,
-                    pos,
-                    Some(target.entity),
-                );
-            }
-            // 远程：发射在途追踪弹（结算延迟到贴身，见 strike 模块）
-            Delivery::Homing => {
-                let (mesh, mat) =
-                    projectile_assets(&mut proj_assets, &mut meshes, &mut materials, faction);
-                // 弹道起点高度按实体类别：怪 1.5 / 塔（含王塔）3.5 / 建筑 1.2
-                let muzzle_y = match unit.kind {
-                    UnitKind::Troop => 1.5,
-                    UnitKind::Tower | UnitKind::KingTower => 3.5,
-                    UnitKind::Building => 1.2,
+        match skill.state {
+            // ===== 待机：冷却倒数，归零且有有效目标 → 进前摇 =====
+            SkillState::Idle { left } => {
+                let Some(target_entity) = skill.target else {
+                    continue;
                 };
-                commands.spawn((
-                    Strike {
-                        attacker: faction,
-                        payload,
-                        flight: Flight::Homing {
-                            target: target.entity,
-                        },
-                    },
-                    Mesh3d(mesh),
-                    MeshMaterial3d(mat),
-                    Transform::from_translation(pos + Vec3::Y * muzzle_y),
-                    NotShadowCaster,
-                ));
+                // 点查表 O(1)；目标不在快照（已死）→ 交给索敌清锁
+                let Some(&i) = snaps.index.get(&target_entity) else {
+                    continue;
+                };
+                let target = &snaps.snaps[i as usize];
+                let edge = edge_dist(pos, self_radius, target.pos, target.radius);
+                if edge > skill.range + 0.05 {
+                    continue; // 不在射程：冷却不流逝，交给移动系统接近
+                }
+                skill.engaged = true;
+                if left > 0 {
+                    skill.state = SkillState::Idle { left: left - 1 };
+                    continue;
+                }
+                // 冷却就绪 → 摇前摇（时长按当前攻速量化，链内冻结）
+                let rate = attack_rate(buffs.as_deref());
+                skill.state = SkillState::Windup {
+                    left: windup_ticks(&skill, rate),
+                };
+            }
+            // ===== 前摇：倒数归零 → 出手帧结算 =====
+            SkillState::Windup { left } => {
+                let left = left - 1;
+                if left > 0 {
+                    skill.state = SkillState::Windup { left };
+                    continue;
+                }
+                // 出手帧：先转后摇（落空也挥完动作），再结算
+                let rate = attack_rate(buffs.as_deref());
+                let cycle = cycle_ticks(&skill, rate);
+                let r = recover_ticks(cycle);
+                skill.state = SkillState::Recover { left: r };
+
+                let Some(target_entity) = skill.target else {
+                    continue; // 落空：无目标可打（挥空）
+                };
+                let Some(&i) = snaps.index.get(&target_entity) else {
+                    continue; // 落空：目标已死（whiff）
+                };
+                let target = &snaps.snaps[i as usize];
+                // 注意：不重新判定距离——出手已 commit，被推挤出射程照样命中
+
+                // 冲锋首击：负载伤害×蓄力倍率，命中后蓄力清零
+                // （直击与溅射共用同一份修改后的负载）
+                let mut payload = skill.payload.clone();
+                if let Some(c) = charge.as_deref_mut() {
+                    if c.charged() {
+                        payload.damage *= c.damage_mult;
+                        c.progress = 0.0;
+                    }
+                }
+
+                match skill.delivery {
+                    // 近战：当场以自身位置为中心结算（直击 primary + 360° 溅射）
+                    Delivery::Melee => {
+                        detonate(
+                            &mut commands,
+                            &mut targets,
+                            &payload,
+                            faction,
+                            pos,
+                            Some(target.entity),
+                        );
+                    }
+                    // 远程：发射在途追踪弹（结算延迟到贴身，见 strike 模块）
+                    Delivery::Homing => {
+                        let (mesh, mat) = projectile_assets(
+                            &mut proj_assets,
+                            &mut meshes,
+                            &mut materials,
+                            faction,
+                        );
+                        // 弹道起点高度按实体类别：怪 1.5 / 塔（含王塔）3.5 / 建筑 1.2
+                        let muzzle_y = match unit.kind {
+                            UnitKind::Troop => 1.5,
+                            UnitKind::Tower | UnitKind::KingTower => 3.5,
+                            UnitKind::Building => 1.2,
+                        };
+                        commands.spawn((
+                            Strike {
+                                attacker: faction,
+                                payload,
+                                flight: Flight::Homing {
+                                    target: target.entity,
+                                },
+                            },
+                            Mesh3d(mesh),
+                            MeshMaterial3d(mat),
+                            Transform::from_translation(pos + Vec3::Y * muzzle_y),
+                            NotShadowCaster,
+                        ));
+                    }
+                }
+                // 出手记录（表现层 attack_action_fx 消费）
+                release_log.0.push((tick.0, entity, target.pos));
+            }
+            // ===== 后摇：可移动（走A），归零 → 回待机冷却 =====
+            SkillState::Recover { left } => {
+                let left = left - 1;
+                if left > 0 {
+                    skill.state = SkillState::Recover { left };
+                } else {
+                    // 周期守恒：release→release = cycle，
+                    // 后摇已耗 R、前摇将耗 W，冷却余量 = cycle − W − R
+                    let rate = attack_rate(buffs.as_deref());
+                    let cycle = cycle_ticks(&skill, rate);
+                    let w = windup_ticks(&skill, rate);
+                    let r = recover_ticks(cycle);
+                    skill.state = SkillState::Idle {
+                        left: cycle.saturating_sub(w + r),
+                    };
+                }
             }
         }
     }
@@ -127,7 +208,7 @@ pub fn attacking(
 #[cfg(test)]
 mod tests {
     use super::super::strike_tick;
-    use super::super::{moving, seek, targeting, test_attacker, test_monster};
+    use super::super::{moving, seek, status_effects, targeting, test_attacker, test_monster};
     use super::*;
 
     /// 近战溅射（瓦基丽）：攻击目标时波及身边的第二个敌人
@@ -137,6 +218,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>();
         let world = app.world_mut();
 
@@ -173,8 +256,9 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
-        for _ in 0..35 {
-            schedule.run(world); // 35 tick > 1.0s 攻击间隔
+        // 40 tick：21 冷却 + 9 前摇 + 裕量 > 1.0s 周期
+        for _ in 0..40 {
+            schedule.run(world);
         }
         assert!(world.get::<Health>(a).unwrap().current < 2000.0, "主目标掉血");
         assert!(
@@ -190,6 +274,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>();
         let world = app.world_mut();
 
@@ -220,8 +306,8 @@ mod tests {
         schedule.run(world);
         assert_eq!(world.get::<Skill>(a).unwrap().target, Some(b));
         assert_eq!(world.get::<Skill>(b).unwrap().target, Some(a));
-        // 跑 120 帧：接近到攻击距离并互相扣血
-        for _ in 0..120 {
+        // 跑 130 帧：接近（含前摇）到攻击距离并互相扣血
+        for _ in 0..130 {
             schedule.run(world);
         }
         let pa = world.get::<Transform>(a).unwrap().translation;
@@ -239,6 +325,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>();
         let world = app.world_mut();
         // 敌方塔紧挨着敌怪（近战攻击怪时溅射半径覆盖塔）
@@ -270,7 +358,7 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
-        for _ in 0..35 {
+        for _ in 0..40 {
             schedule.run(world);
         }
         assert!(
@@ -299,6 +387,8 @@ mod tests {
         app.init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
             .init_resource::<WorldSnaps>();
         let world = app.world_mut();
         // 敌方塔紧挨着敌怪（弹着点溅射半径覆盖塔，但塔必须免疫）
@@ -331,7 +421,7 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking, strike_tick).chain());
-        for _ in 0..120 {
+        for _ in 0..130 {
             schedule.run(world); // 追踪弹有飞行时间，跑足帧数确保命中
         }
         assert!(
@@ -346,6 +436,357 @@ mod tests {
         assert!(
             !tower_damaged,
             "弹溅不得波及塔（hits_towers=false，显式化旧规则）"
+        );
+    }
+
+    // ===== SkillState 状态机守卫测试 =====
+
+    /// 骑士白板的周期参数（与本文件 test_attacker 的数值锚一致）
+    const KNIGHT_CYCLE: u32 = 30; // 1.0s / TICK_DT
+    const KNIGHT_WINDUP: u32 = 9; // 0.3s / TICK_DT
+    const KNIGHT_RECOVER: u32 = 5; // round(30 × 0.15)
+
+    /// 首击时序：贴脸放置后，命中发生在 (cycle−W) 冷却 + W 前摇 ≈ cycle 帧
+    #[test]
+    fn first_strike_waits_windup() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        // 静止靶子（无 Skill 不还手）：与攻击者贴脸
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        world.spawn((
+            test_monster(Faction::Player),
+            test_attacker(),
+            seek(5.0),
+            Health::new(2000.0),
+            Transform::from_xyz(0.0, 1.0, 0.0), // 贴脸
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking).chain());
+        let hp = |w: &mut World| w.get::<Health>(victim).unwrap().current;
+        // 冷却段（cycle−W 帧）内不掉血
+        for _ in 0..KNIGHT_CYCLE - KNIGHT_WINDUP {
+            schedule.run(world);
+        }
+        assert_eq!(hp(world), 100000.0, "冷却段不得命中");
+        // 前摇 W 帧：期间也不掉血（最后 1 帧留到命中窗口）
+        for _ in 0..KNIGHT_WINDUP - 1 {
+            schedule.run(world);
+        }
+        assert_eq!(hp(world), 100000.0, "前摇期间不得命中");
+        // 到点命中（release ≈ 第 cycle+1 帧，量化容差内）
+        for _ in 0..4 {
+            schedule.run(world);
+        }
+        assert!(
+            hp(world) < 100000.0,
+            "冷却+前摇走完后必须命中（cycle 帧附近，±1 tick 容差）"
+        );
+    }
+
+    /// 周期守恒：站桩连续输出，两次命中的帧间隔 = cycle（±1 tick 量化容差）
+    #[test]
+    fn attack_cycle_conserves_dps() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        world.spawn((
+            test_monster(Faction::Player),
+            test_attacker(),
+            seek(5.0),
+            Health::new(2000.0),
+            Transform::from_xyz(0.0, 1.0, 0.0),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking).chain());
+        // 跑 3 个完整周期，记录命中帧（血量变化的帧号）
+        let mut hits: Vec<u32> = vec![];
+        let mut prev = 100000.0f32;
+        for f in 0..KNIGHT_CYCLE * 3 + 4 {
+            schedule.run(world);
+            let cur = world.get::<Health>(victim).unwrap().current;
+            if cur < prev {
+                hits.push(f);
+                prev = cur;
+            }
+        }
+        assert!(hits.len() >= 3, "3 个周期至少 3 次命中，实际 {}", hits.len());
+        for w in hits.windows(2) {
+            let gap = w[1] - w[0];
+            assert!(
+                (gap as i32 - KNIGHT_CYCLE as i32).abs() <= 1,
+                "命中间隔 {gap} 必须等于周期 {KNIGHT_CYCLE}（±1 tick 容差）"
+            );
+        }
+    }
+
+    /// 前摇锁移动：目标在射程外沿 → 单位前摇期间位置逐帧不变
+    #[test]
+    fn windup_locks_movement() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        // 靶子在攻击范围内（否则永远进不了前摇），但有移动目标可验证锁定
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        let atk = world
+            .spawn((
+                test_monster(Faction::Player),
+                test_attacker(),
+                seek(5.0),
+                Mover { speed: 3.0 },
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking, moving).chain());
+        // 跑到进入前摇（21 帧倒数 + 1 帧转换）
+        for _ in 0..KNIGHT_CYCLE - KNIGHT_WINDUP + 1 {
+            schedule.run(world);
+        }
+        let in_windup = matches!(
+            world.get::<Skill>(atk).unwrap().state,
+            SkillState::Windup { .. }
+        );
+        assert!(in_windup, "冷却结束后应进入前摇");
+        // 前摇期间：位置逐帧不变
+        let frozen = world.get::<Transform>(atk).unwrap().translation;
+        for _ in 0..KNIGHT_WINDUP {
+            schedule.run(world);
+            let p = world.get::<Transform>(atk).unwrap().translation;
+            assert_eq!(p, frozen, "前摇期间必须锁移动");
+        }
+        let _ = victim;
+    }
+
+    /// 前摇中被晕 = 白摇取消：不结算；晕结束后重新摇前摇命中
+    #[test]
+    fn stun_cancels_windup() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        let atk = world
+            .spawn((
+                test_monster(Faction::Player),
+                test_attacker(),
+                seek(5.0),
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking, status_effects).chain());
+        // 进前摇（21 冷却 + 1 转换 = 22 帧）
+        for _ in 0..KNIGHT_CYCLE - KNIGHT_WINDUP + 1 {
+            schedule.run(world);
+        }
+        assert!(matches!(
+            world.get::<Skill>(atk).unwrap().state,
+            SkillState::Windup { .. }
+        ));
+        // 前摇中途被晕（Stun buff 直接施加——Zap 的模拟侧效果）
+        world.entity_mut(atk).insert(Buffs::new(ActiveBuff {
+            name: "Stun",
+            secs: 0.5,
+            policy: StackPolicy::Longer,
+            flags: CCFlags::STUN,
+            ..Default::default()
+        }));
+        schedule.run(world);
+        // 白摇：回 Idle{0}，且本帧不结算
+        assert!(
+            matches!(
+                world.get::<Skill>(atk).unwrap().state,
+                SkillState::Idle { left: 0 }
+            ),
+            "前摇中被晕必须取消回 Idle（白摇）"
+        );
+        assert_eq!(
+            world.get::<Health>(victim).unwrap().current,
+            100000.0,
+            "被取消的出手不得结算"
+        );
+        // 晐 15 tick（0.5s）+ 重新前摇 9 tick 后命中
+        for _ in 0..15 + KNIGHT_WINDUP + 2 {
+            schedule.run(world);
+        }
+        assert!(
+            world.get::<Health>(victim).unwrap().current < 100000.0,
+            "晕结束后必须重新摇前摇并命中"
+        );
+    }
+
+    /// 前摇中目标被杀 → 出手帧落空（whiff）：不结算、不 panic、进后摇。
+    /// 同时验证索敌冻结：Windup 中 targeting 不得清死锁（否则测不到 whiff 路径）
+    #[test]
+    fn windup_whiffs_on_dead_target() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        let atk = world
+            .spawn((
+                test_monster(Faction::Player),
+                test_attacker(),
+                seek(5.0),
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        // 冷却就绪：下一帧直接进前摇
+        world.get_mut::<Skill>(atk).unwrap().state = SkillState::Idle { left: 0 };
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking).chain());
+        // 第 1 帧：targeting 构建快照并锁目标；attacking 进前摇
+        schedule.run(world);
+        assert!(matches!(
+            world.get::<Skill>(atk).unwrap().state,
+            SkillState::Windup { .. }
+        ));
+        assert_eq!(world.get::<Skill>(atk).unwrap().target, Some(victim));
+        // 前摇中目标被杀（despawn 立即生效）
+        world.despawn(victim);
+        // 前摇余下帧：targeting 对 Windup 单位冻结（不得清锁）
+        schedule.run(world);
+        assert_eq!(
+            world.get::<Skill>(atk).unwrap().target,
+            Some(victim),
+            "前摇中索敌必须冻结（死锁不清，出手帧自行落空）"
+        );
+        // 跑满前摇 → 出手帧：快照查不到目标 → 落空进后摇
+        for _ in 0..KNIGHT_WINDUP + 2 {
+            schedule.run(world);
+        }
+        assert!(
+            matches!(
+                world.get::<Skill>(atk).unwrap().state,
+                SkillState::Recover { .. }
+            ),
+            "落空后仍要进后摇（挥完动作）"
+        );
+    }
+
+    /// 后摇可移动（走A）：出手后后摇中/后摇结束，单位必须能恢复追击
+    #[test]
+    fn recover_allows_movement() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<ProjectileAssets>()
+            .init_resource::<ReleaseLog>()
+            .init_resource::<Tick>()
+            .init_resource::<WorldSnaps>();
+        let world = app.world_mut();
+        // 靶子贴脸：命中一次后挪远，验证后摇结束单位恢复追击（走A）
+        let victim = world
+            .spawn((
+                test_monster(Faction::Enemy),
+                Health::new(100000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+        let atk = world
+            .spawn((
+                test_monster(Faction::Player),
+                test_attacker(),
+                seek(5.0),
+                Mover { speed: 3.0 },
+                Health::new(2000.0),
+                Transform::from_xyz(0.0, 1.0, 0.0),
+            ))
+            .id();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems((targeting, attacking, moving).chain());
+        // 跑到出手完成（帧 31 release → Recover{5}）
+        for _ in 0..KNIGHT_CYCLE + 2 {
+            schedule.run(world);
+        }
+        assert!(
+            matches!(
+                world.get::<Skill>(atk).unwrap().state,
+                SkillState::Recover { .. }
+            ),
+            "出手帧后应进后摇"
+        );
+        assert!(
+            world.get::<Health>(victim).unwrap().current < 100000.0,
+            "应已完成一次命中"
+        );
+        // 目标挪远（后摇中索敌冻结不清锁，后摇结束进 Idle 后恢复追击）
+        world.get_mut::<Transform>(victim).unwrap().translation = Vec3::new(0.0, 1.0, 6.0);
+        let before = world.get::<Transform>(atk).unwrap().translation;
+        // 后摇 5 帧 + 追击 15 帧（移速 3.0，理论走 1.5）
+        for _ in 0..KNIGHT_RECOVER + 15 {
+            schedule.run(world);
+        }
+        let after = world.get::<Transform>(atk).unwrap().translation;
+        let moved = (after - before).length();
+        assert!(
+            moved > 0.5,
+            "后摇结束进 Idle 后必须恢复移动（走A追击）：实际移动 {moved:.2}"
         );
     }
 }

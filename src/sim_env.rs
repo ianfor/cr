@@ -436,6 +436,7 @@ impl SimWorld {
             .init_resource::<net::OwnHashes>()
             .init_resource::<MatchTimer>()
             .init_resource::<combat::ProjectileAssets>()
+            .init_resource::<combat::ReleaseLog>()
             .init_resource::<combat::WorldSnaps>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
@@ -1028,9 +1029,12 @@ mod tests {
                     Skill {
                         range: 0.75,
                         interval: 1.0,
+                        windup_secs: 0.3,
                         payload: Payload::damage_only(100.0, 0.0, false, true),
                         delivery: Delivery::Melee,
-                        cooldown: 1.0,
+                        state: SkillState::Idle {
+                            left: initial_cooldown_ticks(1.0, 0.3),
+                        },
                         target: None,
                         engaged: false,
                     },
