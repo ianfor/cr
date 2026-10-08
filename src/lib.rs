@@ -147,7 +147,8 @@ pub fn run_app() {
     .add_systems(Update, replay::replay_input)
     .add_systems(Update, replay::save_replay_on_game_over)
     // 法术施法特效（纯表现层；万箭箭矢的落点时刻与波结算帧对齐，
-    // 落点危险圈与 Strike(Volley) 实体同生命周期）
+    // 落点危险圈与 Strike(Volley) 实体同生命周期）；
+    // 出手闪光（attack_action_fx）增量消费 ReleaseLog
     .add_systems(
         Update,
         (
@@ -155,6 +156,8 @@ pub fn run_app() {
             combat::spell_fx_update,
             combat::spell_arrows_fly,
             combat::spell_volley_indicator,
+            combat::attack_action_fx,
+            combat::attack_fx_update,
         )
             .chain(),
     )

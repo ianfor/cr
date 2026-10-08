@@ -618,6 +618,109 @@ pub fn spell_volley_indicator(
     }
 }
 
+/// 出手闪光特效（纯表现层）：出手帧在攻击者处生成、0.12s 缩放淡出。
+/// 近战=攻击者与目标之间的劈砍闪光；远程=枪口闪光（弹体本身已是表现）
+#[derive(Component)]
+pub struct AttackFx {
+    /// 已播放秒数
+    t: f32,
+    /// 总时长
+    duration: f32,
+    /// 起始缩放
+    start_scale: f32,
+}
+
+/// 从出手记录增量检测攻击出手 → 生成出手闪光
+/// （含回放/追帧，cursor 自动追平；世界重置后日志清空，cursor 回退重跟）
+pub fn attack_action_fx(
+    mut commands: Commands,
+    log: Res<ReleaseLog>,
+    mut cursor: Local<usize>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    attackers: Query<(&Unit, &Transform, &Skill)>,
+) {
+    // 世界重置后日志清空：cursor 回退到 0 重新跟（seek 回退重追时特效重放，无害）
+    if *cursor > log.0.len() {
+        *cursor = log.0.len();
+    }
+    while *cursor < log.0.len() {
+        let (_, entity, target_pos) = log.0[*cursor];
+        *cursor += 1;
+        let Ok((unit, transform, skill)) = attackers.get(entity) else {
+            continue; // 攻击者已死（同帧阵亡等）——跳过，不播特效
+        };
+        let color = faction_color(unit.faction);
+        let mesh = meshes.add(Sphere::new(0.22));
+        let mat = materials.add(StandardMaterial {
+            base_color: color.with_alpha(0.9),
+            unlit: true,
+            ..default()
+        });
+        // 光源位置：近战=攻击者朝目标方向顶进 0.5（劈砍点）；
+        // 远程=枪口高度（与弹道起点一致）
+        let (fx_pos, scale) = match skill.delivery {
+            Delivery::Melee => {
+                let mut dir = target_pos - transform.translation;
+                dir.y = 0.0;
+                let dir = if dir.length_squared() < 1e-6 {
+                    Vec3::ZERO
+                } else {
+                    dir.normalize() * 0.5
+                };
+                (transform.translation + Vec3::Y * 1.0 + dir, 1.6)
+            }
+            Delivery::Homing => {
+                let muzzle_y = match unit.kind {
+                    UnitKind::Troop => 1.5,
+                    UnitKind::Tower | UnitKind::KingTower => 3.5,
+                    UnitKind::Building => 1.2,
+                };
+                (transform.translation + Vec3::Y * muzzle_y, 1.0)
+            }
+        };
+        commands.spawn((
+            AttackFx {
+                t: 0.0,
+                duration: 0.12,
+                start_scale: scale,
+            },
+            Mesh3d(mesh),
+            MeshMaterial3d(mat),
+            Transform::from_translation(fx_pos),
+            NotShadowCaster,
+        ));
+    }
+}
+
+/// 出手闪光动画：快速胀大淡出，播完销毁
+pub fn attack_fx_update(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut fx: Query<(
+        Entity,
+        &mut AttackFx,
+        &mut Transform,
+        &MeshMaterial3d<StandardMaterial>,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (e, mut s, mut transform, mat) in &mut fx {
+        s.t += time.delta_secs();
+        let k = (s.t / s.duration).clamp(0.0, 1.0);
+        // 弹性胀大（sin 拱形）+ 淡出
+        let pop = (std::f32::consts::PI * k).sin();
+        let r = s.start_scale * (0.5 + pop);
+        transform.scale = Vec3::splat(r);
+        if let Some(mut m) = materials.get_mut(&mat.0) {
+            m.base_color.set_alpha((1.0 - k) * 0.9);
+        }
+        if s.t >= s.duration {
+            commands.entity(e).despawn();
+        }
+    }
+}
+
 /// 光环动画：半径 0 → end_radius 扩散，透明度淡出，播完销毁
 pub fn spell_fx_update(
     mut commands: Commands,
