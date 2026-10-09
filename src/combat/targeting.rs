@@ -33,19 +33,19 @@ pub fn targeting(
         &Unit,
         Option<&Buffs>,
     )>,
-    all: Query<(Entity, &Unit, &Transform, Option<&Flying>)>,
+    all: Query<(Entity, &Unit, &Transform)>,
 ) {
     // ===== 全场快照（怪+塔+建筑，顺序两端一致） =====
     let WorldSnaps { snaps, grid, index } = &mut *snaps_res;
     snaps.clear();
-    snaps.extend(all.iter().map(|(e, u, t, f)| UnitSnap {
+    snaps.extend(all.iter().map(|(e, u, t)| UnitSnap {
         entity: e,
         kind: u.kind,
         faction: u.faction,
         pos: t.translation,
         radius: u.radius,
         mass: u.mass,
-        flying: f.is_some(),
+        flying: u.flying,
     }));
     // 确定性铁律：统一 query 的迭代序是 archetype 序，不保证 怪→塔→建筑 分组。
     // sort_by_key 是稳定排序：同类保持 query 相对序（与旧单类 query 的相对序一致），
@@ -443,11 +443,12 @@ mod tests {
             aggro_range: 3.0,
             building_only: false,
         };
+        let mut flyer = test_monster(Faction::Enemy);
+        flyer.flying = true;
         world.spawn((
-            test_monster(Faction::Enemy),
+            flyer,
             skill,
             Mover { speed: 2.0 },
-            Flying,
             Health::new(320.0),
             Transform::from_xyz(0.0, 2.6, -5.4),
         ));

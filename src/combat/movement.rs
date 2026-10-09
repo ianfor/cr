@@ -18,10 +18,9 @@ pub fn moving(
         &Skill,
         Option<&mut Charge>,
         Option<&Buffs>,
-        Option<&Flying>,
     )>,
 ) {
-    for (u, mover, mut transform, skill, mut charge, buffs, flying) in &mut movers {
+    for (u, mover, mut transform, skill, mut charge, buffs) in &mut movers {
         // 禁移动（眩晕/缠绕）：实时查询 buff 标志位，无派生缓存；
         // 被控期间冲锋蓄力清零
         if buffs.map(|b| b.channels().cannot_move).unwrap_or(false) {
@@ -50,7 +49,7 @@ pub fn moving(
         }
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
         let stop_dist = skill.select.range + u.radius + target.radius;
-        let goal = steering_goal(pos, target.pos, flying.is_some());
+        let goal = steering_goal(pos, target.pos, u.flying);
         let mut to_goal = goal - pos;
         to_goal.y = 0.0;
         let dist = to_goal.length();
@@ -176,12 +175,13 @@ mod tests {
                 Transform::from_xyz(0.0, 0.0, 8.5),
             ))
             .id();
+        let mut flyer = test_monster(Faction::Player);
+        flyer.flying = true;
         let e = world
             .spawn((
-                test_monster(Faction::Player),
+                flyer,
                 test_skill(),
                 Mover { speed: 1.0 },
-                Flying,
                 Health::new(320.0),
                 Transform::from_xyz(0.0, 2.6, -5.0),
             ))

@@ -170,7 +170,6 @@ pub fn play_card(
             Entity,
             &Unit,
             &Transform,
-            Option<&Flying>,
             &mut Health,
         ),
         Without<Strike>,
@@ -261,7 +260,7 @@ pub fn play_card(
 }
 
 /// 法术结算负载：伤害 + 晕眩（敌）/ 狂暴（己）打包进 payload。
-/// hits_air 恒 true（法术打空军——旧路径无 Flying 过滤，显式化）；
+/// hits_air 恒 true（法术打空军——旧路径无飞行过滤，显式化）；
 /// hits_towers false（塔不吃法术）。buff 施加对象仅部队（detonate 内统一）
 fn spell_payload(spell: &SpellSpec, damage: f32) -> Payload {
     Payload {
@@ -381,7 +380,8 @@ pub fn process_deploying(
 }
 
 /// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）。
-/// 机制全部由能力组件表达：Skill（三段合一）/Mover 必备，Charge/Flying 按卡挂
+/// 机制全部由能力组件表达：Skill（三段合一）/Mover 必备，Charge 按卡挂、
+/// 飞行走 Unit.flying 静态字段
 pub fn spawn_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -396,7 +396,7 @@ pub fn spawn_unit(
     let lift = if spec.flying { FLY_HEIGHT } else { 0.0 };
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
-        Unit::troop(faction, card, r, spec.mass),
+        Unit::troop(faction, card, r, spec.mass, spec.flying),
         // 技能三段合一组件：select（选谁）/ flow（何时打）/ effect（打到会怎样）
         Skill {
             select: TargetSelector {
@@ -446,10 +446,6 @@ pub fn spawn_unit(
             speed_mult: c.speed_mult,
             damage_mult: c.damage_mult,
         });
-    }
-    // 飞行
-    if spec.flying {
-        e.insert(Flying);
     }
     health_bar::spawn(
         &mut e,
@@ -773,7 +769,7 @@ mod tests {
         // 敌方怪在法术范围内（距离 1.0 < 1.2）
         let victim = world
             .spawn((
-                Unit::troop(Faction::Enemy, 0, 0.5, 1.0),
+                Unit::troop(Faction::Enemy, 0, 0.5, 1.0, false),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 5.0),
             ))
@@ -789,7 +785,7 @@ mod tests {
         // 范围外的己方怪（距离 5 > 1.2）：不掉血
         let bystander = world
             .spawn((
-                Unit::troop(Faction::Player, 0, 0.5, 1.0),
+                Unit::troop(Faction::Player, 0, 0.5, 1.0, false),
                 Health::new(2000.0),
                 Transform::from_xyz(0.0, 1.0, 0.0),
             ))
@@ -853,8 +849,7 @@ mod tests {
         // 敌方飞行单位（亡灵）在法术范围内
         let flyer = world
             .spawn((
-                Unit::troop(Faction::Enemy, 0, 0.5, 1.0),
-                Flying,
+                Unit::troop(Faction::Enemy, 0, 0.5, 1.0, true),
                 Health::new(320.0),
                 Transform::from_xyz(0.0, 2.6, 5.0),
             ))

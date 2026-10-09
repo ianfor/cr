@@ -18,7 +18,7 @@ use crate::constants::*;
 ///   帧中出生的单位（墓碑骷髅）下一帧起参与推挤
 pub fn separate_monsters(
     snaps: Res<WorldSnaps>,
-    mut monsters: Query<(Entity, &Unit, Option<&Flying>, &mut Transform)>,
+    mut monsters: Query<(Entity, &Unit, &mut Transform)>,
 ) {    // 力累积：与快照下标平行
     let mut forces = vec![Vec3::ZERO; snaps.snaps.len()];
     // 配对：快照坐标互比（网格桶同样建自这份坐标）
@@ -54,8 +54,8 @@ pub fn separate_monsters(
             });
     }
     // 施力：统一写回（entity → 快照下标点查；不在快照里的单位跳过）
-    for (e, u, f, mut transform) in monsters.iter_mut() {
-        if u.kind != UnitKind::Troop || f.is_some() {
+    for (e, u, mut transform) in monsters.iter_mut() {
+        if u.kind != UnitKind::Troop || u.flying {
             continue;
         }
         let Some(&i) = snaps.index.get(&e) else {
@@ -78,9 +78,9 @@ pub fn separate_monsters(
 
 /// 河道禁入（硬约束）：不在桥道上的地面部队不允许停留在河面，挤下去立刻推回岸边。
 /// 飞行单位无视河道。转向逻辑管"走"，这个管"挤"
-pub fn keep_out_of_river(mut monsters: Query<(&Unit, Option<&Flying>, &mut Transform)>) {
-    for (u, f, mut transform) in &mut monsters {
-        if u.kind != UnitKind::Troop || f.is_some() {
+pub fn keep_out_of_river(mut monsters: Query<(&Unit, &mut Transform)>) {
+    for (u, mut transform) in &mut monsters {
+        if u.kind != UnitKind::Troop || u.flying {
             continue;
         }
         let p = &mut transform.translation;
@@ -100,11 +100,11 @@ pub fn keep_out_of_river(mut monsters: Query<(&Unit, Option<&Flying>, &mut Trans
 /// 地面部队与静态建筑（塔/建筑卡）的阻挡：不能穿过；飞行单位无视。
 /// 静态体判据 = 无 Mover（生产代码里塔/建筑永无 Mover、部队恒有）
 pub fn separate_from_statics(
-    mut movers: Query<(&Unit, Option<&Flying>, &mut Transform), With<Mover>>,
+    mut movers: Query<(&Unit, &mut Transform), With<Mover>>,
     statics: Query<(&Unit, &Transform), Without<Mover>>,
 ) {
-    for (m, f, mut transform) in &mut movers {
-        if f.is_some() {
+    for (m, mut transform) in &mut movers {
+        if m.flying {
             continue;
         }
         // 两遍扫描：先塔后建筑——保持旧"塔 query 全部 → 建筑 query 全部"

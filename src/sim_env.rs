@@ -1025,7 +1025,7 @@ mod tests {
                 let x = (next() % 1400) as f32 / 100.0 - 7.0;
                 let z = (next() % 2000) as f32 / 100.0 - 10.0;
                 world.spawn((
-                    Unit::troop(faction, 0, 0.5, 1.0),
+                    Unit::troop(faction, 0, 0.5, 1.0, false),
                     Skill {
                         select: TargetSelector {
                             policy: TargetPolicy::Seek {

@@ -231,7 +231,6 @@ pub fn apply_commands(
             Entity,
             &Unit,
             &Transform,
-            Option<&Flying>,
             &mut Health,
         ),
         Without<Strike>,
@@ -764,7 +763,7 @@ pub struct ReleaseLog(pub Vec<(u32, Entity, Vec3)>);
 /// 测试用白板骑士部队 Unit（纯物理属性，机制全部由能力组件表达）
 #[cfg(test)]
 pub(crate) fn test_monster(faction: Faction) -> Unit {
-    Unit::troop(faction, 0, 0.5, 1.0)
+    Unit::troop(faction, 0, 0.5, 1.0, false)
 }
 
 /// 测试用白板塔 Unit

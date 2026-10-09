@@ -59,7 +59,6 @@ pub(crate) fn detonate(
             Entity,
             &Unit,
             &Transform,
-            Option<&Flying>,
             &mut Health,
         ),
         Without<Strike>,
@@ -71,7 +70,7 @@ pub(crate) fn detonate(
 ) {
     // 直击：必中（伤害直接结算；buff 与 AOE 同规则——仅部队）
     if let Some(pe) = primary {
-        if let Ok((e, u, _, _, mut hp)) = targets.get_mut(pe) {
+        if let Ok((e, u, _, mut hp)) = targets.get_mut(pe) {
             hp.current -= payload.damage;
             if u.kind == UnitKind::Troop && !payload.enemy_buffs.is_empty() {
                 queue_buffs(commands, e, payload.enemy_buffs.clone());
@@ -82,7 +81,7 @@ pub(crate) fn detonate(
     if payload.splash_radius <= 0.0 && !payload.has_buffs() {
         return;
     }
-    for (e, u, t, flying, mut hp) in targets.iter_mut() {
+    for (e, u, t, mut hp) in targets.iter_mut() {
         if Some(e) == primary {
             continue; // primary 已在直击结算，排除防双份
         }
@@ -101,7 +100,7 @@ pub(crate) fn detonate(
             if !payload.hits_towers && u.kind.is_tower() {
                 continue; // 塔不吃弹溅/法术（显式化旧规则）
             }
-            if flying.is_some() && !payload.hits_air {
+            if u.flying && !payload.hits_air {
                 continue; // 对地攻击打不到空军
             }
             if d.length() <= payload.splash_radius + u.radius {
@@ -157,7 +156,6 @@ pub fn strike_tick(
             Entity,
             &Unit,
             &Transform,
-            Option<&Flying>,
             &mut Health,
         ),
         Without<Strike>,
@@ -195,7 +193,7 @@ pub fn strike_tick(
         match step {
             Step::Homing(target) => {
                 // 查目标位置和半径（怪/塔/建筑统一）；目标已死则打击消失
-                let Ok((_, u, t, _, _)) = targets.get_mut(target) else {
+                let Ok((_, u, t, _)) = targets.get_mut(target) else {
                     commands.entity(e).despawn();
                     continue;
                 };

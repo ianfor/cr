@@ -86,9 +86,10 @@ impl UnitKind {
     }
 }
 
-/// 场上单位（怪/塔/建筑卡的统一组件）：类别 + 阵营 + 卡种 + 物理尺寸。
-/// 战斗机制拆在能力组件上（Skill/Targeting/Mover/...），
-/// 挂什么组件就有什么能力——加新机制 = 加新组件，不改现有类型
+/// 场上单位（怪/塔/建筑卡的统一组件）：类别 + 阵营 + 卡种 + 物理尺寸 + 飞行。
+/// 战斗机制拆在能力组件上（Skill/Mover/...），
+/// 挂什么组件就有什么能力——加新机制 = 加新组件，不改现有类型；
+/// 飞行是静态分类属性（出生定死、永不变化），与 kind 同性质走字段
 #[derive(Component, Clone, Copy)]
 pub struct Unit {
     pub kind: UnitKind,
@@ -101,20 +102,23 @@ pub struct Unit {
     pub radius: f32,
     /// 质量：推挤时按质量分配力，大质量推开小质量（塔/建筑恒 0）
     pub mass: f32,
+    /// 飞行单位：无视河道/地面推挤/静态阻挡，直线飞向目标；
+    /// 仅被 hits_air 的攻击选中/命中（静态属性，非能力组件）
+    pub flying: bool,
 }
 
 impl Unit {
-    pub fn troop(faction: Faction, card: u8, radius: f32, mass: f32) -> Self {
-        Self { kind: UnitKind::Troop, faction, card: Some(card), radius, mass }
+    pub fn troop(faction: Faction, card: u8, radius: f32, mass: f32, flying: bool) -> Self {
+        Self { kind: UnitKind::Troop, faction, card: Some(card), radius, mass, flying }
     }
     pub fn tower(faction: Faction, radius: f32) -> Self {
-        Self { kind: UnitKind::Tower, faction, card: None, radius, mass: 0.0 }
+        Self { kind: UnitKind::Tower, faction, card: None, radius, mass: 0.0, flying: false }
     }
     pub fn king(faction: Faction, radius: f32) -> Self {
-        Self { kind: UnitKind::KingTower, faction, card: None, radius, mass: 0.0 }
+        Self { kind: UnitKind::KingTower, faction, card: None, radius, mass: 0.0, flying: false }
     }
     pub fn building(faction: Faction, card: u8, radius: f32) -> Self {
-        Self { kind: UnitKind::Building, faction, card: Some(card), radius, mass: 0.0 }
+        Self { kind: UnitKind::Building, faction, card: Some(card), radius, mass: 0.0, flying: false }
     }
 }
 
@@ -277,10 +281,6 @@ impl Charge {
         self.progress >= self.windup
     }
 }
-
-/// 飞行单位：无视河道/地面推挤/静态阻挡，直线飞向目标；仅被 hits_air 攻击命中
-#[derive(Component)]
-pub struct Flying;
 
 // ===== 控制标志位（打包进 buff 数据） =====
 // 机制种类无限（眩晕/冰冻/缠绕/缴械/沉默/破被动/嘲讽/魔免...），
