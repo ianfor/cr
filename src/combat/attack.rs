@@ -49,9 +49,7 @@ pub fn attacking(
     mut release_log: ResMut<ReleaseLog>,
     mut units: Query<(
         Entity,
-        &mut AttackFlow,
-        &TargetSelector,
-        &Skill,
+        &mut Skill,
         &Transform,
         &Unit,
         Option<&mut Charge>,
@@ -71,22 +69,24 @@ pub fn attacking(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (entity, mut flow, selector, skill, transform, unit, mut charge, buffs) in &mut units {
+    for (entity, mut skill, transform, unit, mut charge, buffs) in &mut units {
         // 禁攻击（眩晕/缴械）：实时查询 buff 标志位，无派生缓存。
         // 前摇中被控 = 白摇取消（CR 正统）；Idle/Recover 静置不流逝
         if buffs.map(|b| b.channels().cannot_attack).unwrap_or(false) {
-            if let SkillState::Windup { .. } = flow.state {
-                flow.state = SkillState::Idle { left: 0 };
+            if let SkillState::Windup { .. } = skill.flow.state {
+                skill.flow.state = SkillState::Idle { left: 0 };
             }
             continue;
         }
         let pos = transform.translation;
+        // flow 段本系统独占推进；select 段只读；effect 段出手帧读
+        let Skill { select, flow, effect } = &mut *skill;
 
         match flow.state {
             // ===== 待机：冷却倒数（目标在射程内才流逝），归零 → 进前摇 =====
             SkillState::Idle { left } => {
                 // 在射程内才倒数：edge 判定用选择器的 range 与锁定目标
-                let Some(target_entity) = selector.target else {
+                let Some(target_entity) = select.target else {
                     continue;
                 };
                 let Some(&i) = snaps.index.get(&target_entity) else {
@@ -94,7 +94,7 @@ pub fn attacking(
                 };
                 let target = &snaps.snaps[i as usize];
                 let edge = edge_dist(pos, unit.radius, target.pos, target.radius);
-                if edge > selector.range + 0.05 {
+                if edge > select.range + 0.05 {
                     continue; // 不在射程：冷却不流逝，交给移动系统接近
                 }
                 if left > 0 {
@@ -104,7 +104,7 @@ pub fn attacking(
                 // 冷却就绪 → 摇前摇（时长按当前攻速量化，链内冻结）
                 let rate = attack_rate(buffs.as_deref());
                 flow.state = SkillState::Windup {
-                    left: windup_ticks(&flow, rate),
+                    left: windup_ticks(flow, rate),
                 };
             }
             // ===== 前摇：倒数归零 → 出手帧结算 =====
@@ -116,11 +116,11 @@ pub fn attacking(
                 }
                 // 出手帧：先转后摇（落空也挥完动作），再执行效果
                 let rate = attack_rate(buffs.as_deref());
-                let cycle = cycle_ticks(&flow, rate);
+                let cycle = cycle_ticks(flow, rate);
                 let r = recover_ticks(cycle);
                 flow.state = SkillState::Recover { left: r };
 
-                let Some(target_entity) = selector.target else {
+                let Some(target_entity) = select.target else {
                     continue; // 落空：无目标可打（挥空）
                 };
                 let Some(&i) = snaps.index.get(&target_entity) else {
@@ -131,7 +131,7 @@ pub fn attacking(
 
                 // 冲锋首击：负载伤害×蓄力倍率，命中后蓄力清零
                 // （直击与溅射共用同一份修改后的负载）
-                let mut payload = skill.payload.clone();
+                let mut payload = effect.payload.clone();
                 if let Some(c) = charge.as_deref_mut() {
                     if c.charged() {
                         payload.damage *= c.damage_mult;
@@ -148,7 +148,7 @@ pub fn attacking(
                     unit,
                     pos,
                     &payload,
-                    &skill.delivery,
+                    &effect.delivery,
                     target,
                 );
                 // 出手记录（表现层 attack_action_fx 消费）
@@ -163,8 +163,8 @@ pub fn attacking(
                     // 周期守恒：release→release = cycle，
                     // 后摇已耗 R、前摇将耗 W，冷却余量 = cycle − W − R
                     let rate = attack_rate(buffs.as_deref());
-                    let cycle = cycle_ticks(&flow, rate);
-                    let w = windup_ticks(&flow, rate);
+                    let cycle = cycle_ticks(flow, rate);
+                    let w = windup_ticks(flow, rate);
                     let r = recover_ticks(cycle);
                     flow.state = SkillState::Idle {
                         left: cycle.saturating_sub(w + r),
@@ -241,7 +241,7 @@ fn resolve_release(
 #[cfg(test)]
 mod tests {
     use super::super::strike_tick;
-    use super::super::{moving, status_effects, targeting, test_monster, test_skill};
+    use super::super::{moving, status_effects, targeting, test_monster, test_skill, tower_skill};
     use super::*;
 
     /// 近战溅射（瓦基丽）：攻击目标时波及身边的第二个敌人
@@ -274,11 +274,11 @@ mod tests {
                 Transform::from_xyz(0.0, 1.0, 1.0), // 溅射半径内
             ))
             .id();
-        let (selector, flow, mut skill) = test_skill();
-        skill.payload.splash_radius = 1.5;
+        let mut skill = test_skill();
+        skill.effect.payload.splash_radius = 1.5;
         world.spawn((
             test_monster(Faction::Player),
-            (selector, flow, skill),
+            skill,
             Mover { speed: 1.5 },
             Health::new(2000.0),
             Transform::from_xyz(0.0, 1.0, 0.0),
@@ -333,12 +333,12 @@ mod tests {
         // 第 1 帧：立即互相锁定
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(a).unwrap().target,
-            Some(b)
+            world.get::<Skill>(a).unwrap().select.target,
+            Some(b),
         );
         assert_eq!(
-            world.get::<TargetSelector>(b).unwrap().target,
-            Some(a)
+            world.get::<Skill>(b).unwrap().select.target,
+            Some(a),
         );
         // 跑 130 帧：接近（含前摇）到攻击距离并互相扣血
         for _ in 0..130 {
@@ -366,24 +366,7 @@ mod tests {
         // 敌方塔紧挨着敌怪（近战攻击怪时溅射半径覆盖塔）
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            TargetSelector {
-                policy: TargetPolicy::Guard,
-                range: 6.0,
-                hits_air: true,
-                target: None,
-                engaged: false,
-            },
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            tower_skill(),
             Health::new(6000.0),
             Transform::from_xyz(0.0, 0.0, 1.0),
         ));
@@ -394,13 +377,13 @@ mod tests {
                 Transform::from_xyz(0.0, 1.0, 0.0),
             ))
             .id();
-        let (selector, flow, mut skill) = test_skill();
-        skill.payload.splash_radius = 1.5;
+        let mut skill = test_skill();
+        skill.effect.payload.splash_radius = 1.5;
         // 近战负载 hits_towers = true（spawn_unit 对非远程卡的取值）
-        skill.payload.hits_towers = true;
+        skill.effect.payload.hits_towers = true;
         world.spawn((
             test_monster(Faction::Player),
-            (selector, flow, skill),
+            skill,
             Mover { speed: 1.5 },
             Health::new(2000.0),
             Transform::from_xyz(0.0, 1.0, 0.5), // 贴脸敌怪
@@ -444,24 +427,7 @@ mod tests {
         // 敌方塔紧挨着敌怪（弹着点溅射半径覆盖塔，但塔必须免疫）
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            TargetSelector {
-                policy: TargetPolicy::Guard,
-                range: 6.0,
-                hits_air: true,
-                target: None,
-                engaged: false,
-            },
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            tower_skill(),
             Health::new(6000.0),
             Transform::from_xyz(0.0, 0.0, 1.0),
         ));
@@ -472,15 +438,15 @@ mod tests {
                 Transform::from_xyz(0.0, 1.0, 0.0),
             ))
             .id();
-        let (mut selector, flow, mut skill) = test_skill();
-        selector.range = 4.0;
-        skill.delivery = Delivery::Homing;
-        skill.payload.splash_radius = 1.5;
+        let mut skill = test_skill();
+        skill.select.range = 4.0;
+        skill.effect.delivery = Delivery::Homing;
+        skill.effect.payload.splash_radius = 1.5;
         // 远程弹溅不吃塔（spawn_unit 对远程卡的取值）
-        skill.payload.hits_towers = false;
+        skill.effect.payload.hits_towers = false;
         world.spawn((
             test_monster(Faction::Player),
-            (selector, flow, skill),
+            skill,
             Mover { speed: 1.5 },
             Health::new(2000.0),
             Transform::from_xyz(0.0, 1.0, -2.0), // 射程内
@@ -646,7 +612,7 @@ mod tests {
             schedule.run(world);
         }
         let in_windup = matches!(
-            world.get::<AttackFlow>(atk).unwrap().state,
+            world.get::<Skill>(atk).unwrap().flow.state,
             SkillState::Windup { .. }
         );
         assert!(in_windup, "冷却结束后应进入前摇");
@@ -694,7 +660,7 @@ mod tests {
             schedule.run(world);
         }
         assert!(matches!(
-            world.get::<AttackFlow>(atk).unwrap().state,
+            world.get::<Skill>(atk).unwrap().flow.state,
             SkillState::Windup { .. }
         ));
         // 前摇中途被晕（Stun buff 直接施加——Zap 的模拟侧效果）
@@ -709,7 +675,7 @@ mod tests {
         // 白摇：回 Idle{0}，且本帧不结算
         assert!(
             matches!(
-                world.get::<AttackFlow>(atk).unwrap().state,
+                world.get::<Skill>(atk).unwrap().flow.state,
                 SkillState::Idle { left: 0 }
             ),
             "前摇中被晕必须取消回 Idle（白摇）"
@@ -757,18 +723,18 @@ mod tests {
             ))
             .id();
         // 冷却就绪：下一帧直接进前摇
-        world.get_mut::<AttackFlow>(atk).unwrap().state = SkillState::Idle { left: 0 };
+        world.get_mut::<Skill>(atk).unwrap().flow.state = SkillState::Idle { left: 0 };
 
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
         // 第 1 帧：targeting 构建快照并锁目标；attacking 进前摇
         schedule.run(world);
         assert!(matches!(
-            world.get::<AttackFlow>(atk).unwrap().state,
+            world.get::<Skill>(atk).unwrap().flow.state,
             SkillState::Windup { .. }
         ));
         assert_eq!(
-            world.get::<TargetSelector>(atk).unwrap().target,
+            world.get::<Skill>(atk).unwrap().select.target,
             Some(victim)
         );
         // 前摇中目标被杀（despawn 立即生效）
@@ -776,7 +742,7 @@ mod tests {
         // 前摇余下帧：targeting 对出手过程中的单位冻结（不得清锁）
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(atk).unwrap().target,
+            world.get::<Skill>(atk).unwrap().select.target,
             Some(victim),
             "前摇中索敌必须冻结（死锁不清，出手帧自行落空）"
         );
@@ -786,7 +752,7 @@ mod tests {
         }
         assert!(
             matches!(
-                world.get::<AttackFlow>(atk).unwrap().state,
+                world.get::<Skill>(atk).unwrap().flow.state,
                 SkillState::Recover { .. }
             ),
             "落空后仍要进后摇（挥完动作）"
@@ -830,7 +796,7 @@ mod tests {
         }
         assert!(
             matches!(
-                world.get::<AttackFlow>(atk).unwrap().state,
+                world.get::<Skill>(atk).unwrap().flow.state,
                 SkillState::Recover { .. }
             ),
             "出手帧后应进后摇"

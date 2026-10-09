@@ -41,6 +41,7 @@ pub fn building_spawner(
 
 #[cfg(test)]
 mod tests {
+    use super::super::cannon_skill;
     use super::super::{
         attacking, despawn_dead, moving, status_effects, targeting, test_monster, test_skill,
         WorldSnaps,
@@ -83,22 +84,7 @@ mod tests {
         world.spawn((
             Unit::building(Faction::Enemy, 19, 0.6),
             long_decay(),
-            TargetSelector {
-                policy: TargetPolicy::Guard,
-                range: 5.0,
-                hits_air: false,
-                target: None,
-                engaged: false,
-            },
-            AttackFlow {
-                interval: 0.9,
-                windup_secs: 0.35,
-                state: SkillState::Idle { left: 0 },
-            },
-            Skill {
-                payload: Payload::damage_only(90.0, 0.0, false, false),
-                delivery: Delivery::Homing,
-            },
+            cannon_skill(),
             Health::new(1400.0),
             Transform::from_xyz(4.0, 0.7, 5.0),
         ));

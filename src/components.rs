@@ -186,11 +186,13 @@ pub enum SkillState {
     Recover { left: u32 },
 }
 
-// ===== 攻击三权分立 =====
-// 普攻拆为三个互不牵连的关注点，各挂一个组件：
-//   TargetSelector（选谁）→ AttackFlow（何时打）→ Skill（打到会怎样）
-// 选择器只写 target/engaged；流程只推进 SkillState；效果只是纯规格。
-// 系统间靠帧同步链顺序保证一致视图，无跨系统共享可变状态。
+// ===== 攻击三段结构（组件合一） =====
+// 普攻按关注点分三段——select（选谁）→ flow（何时打）→ effect（打到会怎样）。
+// 三段恒同时出现（不存在"有选择器没流程"的单位），拆成独立组件只会
+// 让 query 参数膨胀、构造点三份样板——所以组件上合一（单一 Skill），
+// 结构上分段（嵌套子结构体，设计意图由类型承载）。
+// 写者约定：select.target/engaged 由 targeting 系统独占写（attacking/moving 只读）；
+// flow.state 由 attacking 系统独占推进。
 
 /// 目标选择策略：怪物主动寻敌（含建筑兜底），塔/建筑原地守卫
 pub enum TargetPolicy {
@@ -205,8 +207,7 @@ pub enum TargetPolicy {
     Guard,
 }
 
-/// 目标选择器：怎么选目标（锁定谁、何时保持/失效/重锁）
-#[derive(Component)]
+/// 目标选择段：怎么选目标（锁定谁、何时保持/失效/重锁）
 pub struct TargetSelector {
     pub policy: TargetPolicy,
     /// 攻击范围（边缘距离）：锁定保持判定 + 流程系统"在射程内"判定共用
@@ -214,16 +215,15 @@ pub struct TargetSelector {
     /// 能否选中空中单位（选择侧过滤）。与 payload.hits_air 解耦——
     /// 当前各卡同值，将来"能选空军但溅射对地"类卡可独立表达
     pub hits_air: bool,
-    /// 锁定的攻击目标（唯一写者：targeting 系统）
+    /// 锁定的攻击目标（写者：targeting 系统）
     pub target: Option<Entity>,
     /// 已进入过攻击范围（交战）：此后被挤出范围 = 打断解锁；
     /// 交战中锁定不换目标（防距离抖动 flip-flop，对齐 CR）
     pub engaged: bool,
 }
 
-/// 执行流程控制：什么时候打（纯计时，不知道效果是什么）。
+/// 执行流程段：什么时候打（纯计时，不知道效果是什么）。
 /// 前摇/出手帧/后摇三态循环，冷却合并在 Idle.left
-#[derive(Component)]
 pub struct AttackFlow {
     /// 攻击间隔（秒）——两次命中的完整周期（含前摇后摇）
     pub interval: f32,
@@ -233,13 +233,24 @@ pub struct AttackFlow {
     pub state: SkillState,
 }
 
-/// 结算效果：打到会怎样（纯规格，不知道何时打）。
+/// 结算效果段：打到会怎样（纯规格，不知道何时打）。
 /// 塔（arena）、建筑卡（加农炮）、怪物（CardSpec）共用；
-/// 命中执行是统一的 detonate（strike 模块）
-#[derive(Component)]
-pub struct Skill {
+/// 出手帧执行见 attack::resolve_release，命中结算是统一的
+/// detonate（strike 模块）
+pub struct SkillEffect {
     pub payload: Payload,
     pub delivery: Delivery,
+}
+
+/// 技能组件：一次普攻的完整定义与运行时状态（怪/塔/建筑卡共用）
+#[derive(Component)]
+pub struct Skill {
+    /// 选谁：目标选择（锁定/保持/重锁规则 + 运行时 target/engaged）
+    pub select: TargetSelector,
+    /// 何时打：执行流程（前摇/出手帧/后摇三态）
+    pub flow: AttackFlow,
+    /// 打到会怎样：结算效果规格
+    pub effect: SkillEffect,
 }
 
 /// 移动能力（塔/建筑没有）：朝目标移动，过河走桥

@@ -381,7 +381,7 @@ pub fn process_deploying(
 }
 
 /// 生成怪物实体（play_card 部队落地 / 墓碑出兵共用）。
-/// 机制全部由能力组件表达：TargetSelector/AttackFlow/Skill/Mover 必备，Charge/Flying 按卡挂
+/// 机制全部由能力组件表达：Skill（三段合一）/Mover 必备，Charge/Flying 按卡挂
 pub fn spawn_unit(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -397,37 +397,39 @@ pub fn spawn_unit(
     // 胶囊按比例缩放：半径 r、圆柱段 2r，总高 4r
     let mut e = commands.spawn((
         Unit::troop(faction, card, r, spec.mass),
-        // 三权分立：选择器（选谁）/ 流程（何时打）/ 效果（打到会怎样）
-        TargetSelector {
-            policy: TargetPolicy::Seek {
-                aggro_range: spec.aggro_range,
-                building_only: spec.building_only,
-            },
-            range: spec.attack_range,
-            hits_air: spec.hits_air,
-            target: None,
-            engaged: false,
-        },
-        AttackFlow {
-            interval: spec.attack_interval,
-            windup_secs: spec.windup_secs,
-            // 首击时序与旧冷却模型对齐：周期 − 前摇
-            state: SkillState::Idle {
-                left: initial_cooldown_ticks(spec.attack_interval, spec.windup_secs),
-            },
-        },
+        // 技能三段合一组件：select（选谁）/ flow（何时打）/ effect（打到会怎样）
         Skill {
-            // 近战溅射波及塔（旧规则）、远程弹溅不吃塔——hits_towers 显式化
-            payload: Payload::damage_only(
-                spec.damage,
-                spec.splash_radius,
-                spec.hits_air,
-                !spec.ranged,
-            ),
-            delivery: if spec.ranged {
-                Delivery::Homing
-            } else {
-                Delivery::Melee
+            select: TargetSelector {
+                policy: TargetPolicy::Seek {
+                    aggro_range: spec.aggro_range,
+                    building_only: spec.building_only,
+                },
+                range: spec.attack_range,
+                hits_air: spec.hits_air,
+                target: None,
+                engaged: false,
+            },
+            flow: AttackFlow {
+                interval: spec.attack_interval,
+                windup_secs: spec.windup_secs,
+                // 首击时序与旧冷却模型对齐：周期 − 前摇
+                state: SkillState::Idle {
+                    left: initial_cooldown_ticks(spec.attack_interval, spec.windup_secs),
+                },
+            },
+            effect: SkillEffect {
+                // 近战溅射波及塔（旧规则）、远程弹溅不吃塔——hits_towers 显式化
+                payload: Payload::damage_only(
+                    spec.damage,
+                    spec.splash_radius,
+                    spec.hits_air,
+                    !spec.ranged,
+                ),
+                delivery: if spec.ranged {
+                    Delivery::Homing
+                } else {
+                    Delivery::Melee
+                },
             },
         },
         Mover { speed: spec.speed },
@@ -476,7 +478,7 @@ pub fn decay_buff(hp: f32, lifetime_secs: f32) -> ActiveBuff {
 }
 
 /// 生成建筑实体（速度为 0 的特殊单位：可被索敌、有寿命，
-/// 攻击/出兵/寿命分别由 TargetSelector+AttackFlow+Skill/Spawner/Decay buff 表达；
+/// 攻击/出兵/寿命分别由 Skill（三段合一）/Spawner/Decay buff 表达；
 /// 寿命尽头走 despawn_dead 通用死亡路径）
 fn spawn_building(
     commands: &mut Commands,
@@ -498,24 +500,24 @@ fn spawn_building(
     ));
     // 加农炮类攻击能力（首冷却 0：有敌即摇前摇开火，之后按周期）
     if let Some(a) = &spec.attack {
-        e.insert((
-            TargetSelector {
+        e.insert(Skill {
+            select: TargetSelector {
                 policy: TargetPolicy::Guard,
                 range: a.range,
                 hits_air: a.hits_air,
                 target: None,
                 engaged: false,
             },
-            AttackFlow {
+            flow: AttackFlow {
                 interval: a.interval,
                 windup_secs: a.windup_secs,
                 state: SkillState::Idle { left: 0 },
             },
-            Skill {
+            effect: SkillEffect {
                 payload: Payload::damage_only(a.damage, 0.0, a.hits_air, false),
                 delivery: Delivery::Homing,
             },
-        ));
+        });
     }
     // 墓碑类出兵能力（冷却从间隔起：落地 interval 秒后出第一只）
     if let Some(s) = &spec.spawner {
@@ -722,10 +724,8 @@ mod tests {
         let spawned: Vec<Entity> = troops.iter(world).map(|(e, _u)| e).collect();
         assert_eq!(spawned.len(), spec.count as usize);
         let skill = world.get::<Skill>(spawned[0]).unwrap();
-        assert_eq!(skill.payload.damage, ms.damage);
-        let flow = world.get::<AttackFlow>(spawned[0]).unwrap();
-        assert_eq!(flow.interval, ms.attack_interval);
-        assert!(world.get::<TargetSelector>(spawned[0]).is_some());
+        assert_eq!(skill.effect.payload.damage, ms.damage);
+        assert_eq!(skill.flow.interval, ms.attack_interval);
         assert!(world.get::<Mover>(spawned[0]).is_some());
     }
 

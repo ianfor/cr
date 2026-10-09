@@ -664,7 +664,7 @@ pub fn attack_action_fx(
         });
         // 光源位置：近战=攻击者朝目标方向顶进 0.5（劈砍点）；
         // 远程=枪口高度（与弹道起点一致）
-        let (fx_pos, scale) = match skill.delivery {
+        let (fx_pos, scale) = match skill.effect.delivery {
             Delivery::Melee => {
                 let mut dir = target_pos - transform.translation;
                 dir.y = 0.0;
@@ -773,52 +773,82 @@ pub(crate) fn test_tower(faction: Faction) -> Unit {
     Unit::tower(faction, 1.0)
 }
 
-/// 测试用怪物选择器（aggro 白板值；索敌测试可覆盖 aggro_range）
+/// 测试用白板骑士技能（数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 /
+/// 0.3s 前摇 / 近战 / aggro 5）。需要自定义策略/数值时先改字段再入 bundle
 #[cfg(test)]
-pub(crate) fn seek(aggro: f32) -> TargetSelector {
-    TargetSelector {
-        policy: TargetPolicy::Seek {
-            aggro_range: aggro,
-            building_only: false,
+pub(crate) fn test_skill() -> Skill {
+    Skill {
+        select: TargetSelector {
+            policy: TargetPolicy::Seek {
+                aggro_range: 5.0,
+                building_only: false,
+            },
+            range: 0.75,
+            hits_air: false,
+            target: None,
+            engaged: false,
         },
-        range: 0.75,
-        hits_air: false,
-        target: None,
-        engaged: false,
-    }
-}
-
-/// 测试用守卫选择器（塔/建筑卡原地守卫）
-#[cfg(test)]
-pub(crate) fn guard_selector(range: f32) -> TargetSelector {
-    TargetSelector {
-        policy: TargetPolicy::Guard,
-        range,
-        hits_air: true,
-        target: None,
-        engaged: false,
-    }
-}
-
-/// 测试用白板攻击三件套（骑士数值锚：100 伤害 / 0.75 射程 / 1.0s 攻速 /
-/// 0.3s 前摇 / 近战 / aggro 5）。spawn 时解构或嵌套元组直接入 bundle；
-/// 需要自定义策略/数值时先解构改字段再入 bundle
-#[cfg(test)]
-pub(crate) fn test_skill() -> (TargetSelector, AttackFlow, Skill) {
-    (
-        seek(5.0),
-        AttackFlow {
+        flow: AttackFlow {
             interval: 1.0,
             windup_secs: 0.3,
             state: SkillState::Idle {
                 left: initial_cooldown_ticks(1.0, 0.3),
             },
         },
-        Skill {
+        effect: SkillEffect {
             payload: Payload::damage_only(100.0, 0.0, false, true),
             delivery: Delivery::Melee,
         },
-    )
+    }
+}
+
+/// 测试用塔技能（守卫 / 射程 6 / 塔伤 / 对空 / 远程追踪弹）
+#[cfg(test)]
+pub(crate) fn tower_skill() -> Skill {
+    Skill {
+        select: TargetSelector {
+            policy: TargetPolicy::Guard,
+            range: 6.0,
+            hits_air: true,
+            target: None,
+            engaged: false,
+        },
+        flow: AttackFlow {
+            interval: 1.0,
+            windup_secs: 0.35,
+            state: SkillState::Idle {
+                left: initial_cooldown_ticks(1.0, 0.35),
+            },
+        },
+        effect: SkillEffect {
+            payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
+            delivery: Delivery::Homing,
+        },
+    }
+}
+
+/// 测试用加农炮技能（守卫 / 射程 5 / 0.9s 周期 / 90 伤 / 仅对地 /
+/// 首冷却 0 有敌即摇）
+#[cfg(test)]
+pub(crate) fn cannon_skill() -> Skill {
+    Skill {
+        select: TargetSelector {
+            policy: TargetPolicy::Guard,
+            range: 5.0,
+            hits_air: false,
+            target: None,
+            engaged: false,
+        },
+        flow: AttackFlow {
+            interval: 0.9,
+            windup_secs: 0.35,
+            state: SkillState::Idle { left: 0 },
+        },
+        effect: SkillEffect {
+            payload: Payload::damage_only(90.0, 0.0, false, false),
+            delivery: Delivery::Homing,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -835,24 +865,7 @@ mod tests {
         };
         world.spawn((
             unit,
-            TargetSelector {
-                policy: TargetPolicy::Guard,
-                range: 6.0,
-                hits_air: true,
-                target: None,
-                engaged: false,
-            },
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            tower_skill(),
             Health {
                 current: hp,
                 max: 100.0,

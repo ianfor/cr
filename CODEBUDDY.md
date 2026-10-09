@@ -69,7 +69,7 @@ REPLAY=replays/xxx.cr cargo run         # 录像回放模式（空格暂停，1/
 | `constants.rs` | 所有数值调参（地图/战斗/圣水/计时）+ `TowerSpec` + `CARDS` 卡牌规格 |
 | `components.rs` | ECS 组件与资源（Faction/Health/Monster/Tower/Elixir/Decks/GameCommand 等） |
 | `arena.rs` | 场景搭建：相机（正交斜视）、灯光、地面、塔生成；红方视角镜像 |
-| `combat/` | 战斗核心（攻击三权分立：TargetSelector 选谁 / AttackFlow 何时打（前摇→出手帧→后摇）/ Skill 打到会怎样；机制拆为能力组件 + 小系统）：输入采集与指令执行（`mod.rs`）、目标选择与全场快照（`targeting.rs`，每帧构建 WorldSnaps 战场视图）、攻击流程推进与出手结算（`attack.rs`）、移动转向（`movement.rs`）、推挤/河道/静态阻挡（`physics.rs`）、在途打击与统一命中结算（`strike.rs`，detonate）、buff/CC（`status.rs`）、建筑（`buildings.rs`）、AOI 均匀网格（`grid.rs`，确定性约束：桶数组行主序、禁 HashMap 迭代） |
+| `combat/` | 战斗核心（机制拆为能力组件 + 小系统；普攻 = Skill 单组件三段结构：select 选谁 / flow 何时打（前摇→出手帧→后摇）/ effect 打到会怎样）：输入采集与指令执行（`mod.rs`）、目标选择与全场快照（`targeting.rs`，每帧构建 WorldSnaps 战场视图）、攻击流程推进与出手结算（`attack.rs`）、移动转向（`movement.rs`）、推挤/河道/静态阻挡（`physics.rs`）、在途打击与统一命中结算（`strike.rs`，detonate）、buff/CC（`status.rs`）、建筑（`buildings.rs`）、AOI 均匀网格（`grid.rs`，确定性约束：桶数组行主序、禁 HashMap 迭代） |
 | `cards.rs` | 牌库洗牌/循环、出牌与部署区域规则（推塔开放侧区）、卡槽 UI |
 | `elixir.rs` | 圣水回复（倍数随对局阶段）与 UI |
 | `match_flow.rs` | 对局计时（常规→加时→拼血）、结算界面（弹出大字+烟花特效） |

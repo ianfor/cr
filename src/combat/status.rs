@@ -34,7 +34,7 @@ pub fn status_effects(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{guard_selector, moving, targeting, test_monster, test_skill, WorldSnaps};
+    use super::super::{moving, targeting, test_monster, test_skill, tower_skill, WorldSnaps};
     use super::*;
 
     fn stun_buff(secs: f32) -> ActiveBuff {
@@ -61,18 +61,7 @@ mod tests {
 
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            guard_selector(6.0),
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            tower_skill(),
             Health::new(6000.0),
             Transform::from_xyz(0.0, 0.0, 12.5),
         ));
@@ -248,18 +237,7 @@ mod tests {
         // 敌方塔做行军目标
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            guard_selector(6.0),
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            tower_skill(),
             Health::new(60000.0),
             Transform::from_xyz(0.0, 0.0, 12.5),
         ));

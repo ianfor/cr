@@ -28,8 +28,7 @@ pub fn targeting(
     mut snaps_res: ResMut<WorldSnaps>,
     mut units: Query<(
         Entity,
-        &mut TargetSelector,
-        &AttackFlow,
+        &mut Skill,
         &Transform,
         &Unit,
         Option<&Buffs>,
@@ -65,7 +64,7 @@ pub fn targeting(
     }
     let (snaps, grid, index) = (&*snaps, &*grid, &*index);
 
-    for (entity, mut selector, flow, transform, unit, buffs) in &mut units {
+    for (entity, mut skill, transform, unit, buffs) in &mut units {
         // 禁索敌（眩晕/致盲）：实时查询 buff 标志位，无派生缓存
         if buffs.map(|b| b.channels().cannot_seek).unwrap_or(false) {
             continue;
@@ -73,12 +72,15 @@ pub fn targeting(
         // 出手过程（前摇/后摇）索敌全冻结：失效判定与重锁都跳过——
         // 否则前摇中被推挤出射程会永久打断出手（已 commit 必须打完）；
         // 死锁在出手帧自行落空（whiff），后摇结束回 Idle 由这里清理重锁
-        if !matches!(flow.state, SkillState::Idle { .. }) {
+        if !matches!(skill.flow.state, SkillState::Idle { .. }) {
             continue;
         }
         let pos = transform.translation;
         let faction = unit.faction;
         let self_radius = unit.radius;
+        // select 段可写（本系统是其唯一写者）；flow/effect 段本系统不碰
+        // （字段重命名绑定 selector：正文沿用旧名，减噪）
+        let Skill { select: selector, .. } = &mut *skill;
 
         // 策略参数先拷出（policy 数据全 Copy）：match 不跨写借用
         let (guard, aggro_range, building_only) = match &selector.policy {
@@ -242,7 +244,7 @@ fn merge_nearest(
 #[cfg(test)]
 mod tests {
     use super::super::attacking;
-    use super::super::{test_monster, test_skill, WorldSnaps};
+    use super::super::{test_monster, test_skill, tower_skill, WorldSnaps};
     use super::*;
     use crate::components::Health;
     use crate::constants::TOWER_ATTACK_DAMAGE;
@@ -275,24 +277,7 @@ mod tests {
         world
             .spawn((
                 Unit::tower(faction, 1.0),
-                TargetSelector {
-                    policy: TargetPolicy::Guard,
-                    range: 6.0,
-                    hits_air: true,
-                    target: None,
-                    engaged: false,
-                },
-                AttackFlow {
-                    interval: 1.0,
-                    windup_secs: 0.35,
-                    state: SkillState::Idle {
-                        left: initial_cooldown_ticks(1.0, 0.35),
-                    },
-                },
-                Skill {
-                    payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                    delivery: Delivery::Homing,
-                },
+                tower_skill(),
                 Health::new(6000.0),
                 Transform::from_translation(pos),
             ))
@@ -310,8 +295,8 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(targeting);
         schedule.run(world);
-        assert_eq!(world.get::<TargetSelector>(a).unwrap().target, Some(b));
-        assert_eq!(world.get::<TargetSelector>(b).unwrap().target, Some(a));
+        assert_eq!(world.get::<Skill>(a).unwrap().select.target, Some(b));
+        assert_eq!(world.get::<Skill>(b).unwrap().select.target, Some(a));
     }
 
     /// 行军中的怪（未交战）必须回应进入 aggro 的敌人：改锁更近的怪。
@@ -327,14 +312,14 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         // 出生时无怪可打 → 锁塔（行军方向）
-        assert_eq!(world.get::<TargetSelector>(m).unwrap().target, Some(tower));
-        assert!(!world.get::<TargetSelector>(m).unwrap().engaged);
+        assert_eq!(world.get::<Skill>(m).unwrap().select.target, Some(tower));
+        assert!(!world.get::<Skill>(m).unwrap().select.engaged);
 
         // 敌方怪物进入 aggro（距离 4 < 塔 17.5）：未交战必须改锁更近的怪
         let e = spawn_seek_monster(world, Faction::Enemy, Vec3::new(0.0, 1.0, -1.0));
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().select.target,
             Some(e),
             "行军中的单位必须回应进入 aggro 的更近敌人"
         );
@@ -353,7 +338,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().select.target,
             Some(tower),
             "aggro 内塔更近时必须锁塔（塔不是兜底目标）"
         );
@@ -371,14 +356,14 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
         schedule.run(world);
-        assert_eq!(world.get::<TargetSelector>(m).unwrap().target, Some(tower));
-        assert!(world.get::<TargetSelector>(m).unwrap().engaged, "贴塔单位应已交战");
+        assert_eq!(world.get::<Skill>(m).unwrap().select.target, Some(tower));
+        assert!(world.get::<Skill>(m).unwrap().select.engaged, "贴塔单位应已交战");
 
         // 敌方怪物进入 aggro：已交战的怪不得改目标
         spawn_seek_monster(world, Faction::Enemy, Vec3::new(0.0, 1.0, 9.0));
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().select.target,
             Some(tower),
             "交战中的单位不得改目标"
         );
@@ -395,8 +380,8 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems((targeting, attacking).chain());
         schedule.run(world);
-        assert_eq!(world.get::<TargetSelector>(m).unwrap().target, Some(tower));
-        assert!(world.get::<TargetSelector>(m).unwrap().engaged);
+        assert_eq!(world.get::<Skill>(m).unwrap().select.target, Some(tower));
+        assert!(world.get::<Skill>(m).unwrap().select.engaged);
 
         // 模拟被挤开：挪到塔的攻击范围外，同时挤它的敌怪就在 aggro 内
         world.get_mut::<Transform>(m).unwrap().translation = Vec3::new(0.0, 1.0, 9.0);
@@ -404,7 +389,7 @@ mod tests {
 
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(m).unwrap().target,
+            world.get::<Skill>(m).unwrap().select.target,
             Some(e),
             "被打断后必须改锁 aggro 内最近的敌人（挤它的那只）"
         );
@@ -418,15 +403,15 @@ mod tests {
         let tower = spawn_guard_tower(world, Faction::Enemy, Vec3::new(0.0, 0.0, 12.5));
         let mut giant = test_monster(Faction::Player);
         giant.mass = 3.0;
-        let (mut sel, flow, skill) = test_skill();
-        sel.policy = TargetPolicy::Seek {
+        let mut skill = test_skill();
+        skill.select.policy = TargetPolicy::Seek {
             aggro_range: 5.0,
             building_only: true,
         };
         let g = world
             .spawn((
                 giant,
-                (sel, flow, skill),
+                skill,
                 Mover { speed: 1.0 },
                 Health::new(5000.0),
                 Transform::from_xyz(0.0, 1.0, -5.0),
@@ -439,7 +424,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(g).unwrap().target,
+            world.get::<Skill>(g).unwrap().select.target,
             Some(tower),
             "只攻建筑单位必须无视怪物直奔塔"
         );
@@ -453,14 +438,14 @@ mod tests {
         let tower = spawn_guard_tower(world, Faction::Enemy, Vec3::new(0.0, 0.0, 12.5));
         let knight = spawn_seek_monster(world, Faction::Player, Vec3::new(0.0, 1.0, -5.0));
         // 敌方飞行单位（亡灵）贴脸
-        let (mut sel, flow, skill) = test_skill();
-        sel.policy = TargetPolicy::Seek {
+        let mut skill = test_skill();
+        skill.select.policy = TargetPolicy::Seek {
             aggro_range: 3.0,
             building_only: false,
         };
         world.spawn((
             test_monster(Faction::Enemy),
-            (sel, flow, skill),
+            skill,
             Mover { speed: 2.0 },
             Flying,
             Health::new(320.0),
@@ -471,7 +456,7 @@ mod tests {
         schedule.add_systems(targeting);
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(knight).unwrap().target,
+            world.get::<Skill>(knight).unwrap().select.target,
             Some(tower),
             "不能对空的单位必须跳过飞行单位"
         );
@@ -489,13 +474,13 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(targeting);
         schedule.run(world);
-        assert_eq!(world.get::<TargetSelector>(tower).unwrap().target, Some(m));
+        assert_eq!(world.get::<Skill>(tower).unwrap().select.target, Some(m));
 
         // 怪跑出射程：丢锁
         world.get_mut::<Transform>(m).unwrap().translation = Vec3::new(0.0, 1.0, 16.5);
         schedule.run(world);
         assert_eq!(
-            world.get::<TargetSelector>(tower).unwrap().target,
+            world.get::<Skill>(tower).unwrap().select.target,
             None,
             "守卫目标出射程必须丢锁"
         );

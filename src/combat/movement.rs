@@ -15,14 +15,13 @@ pub fn moving(
         &Unit,
         &Mover,
         &mut Transform,
-        &TargetSelector,
-        &AttackFlow,
+        &Skill,
         Option<&mut Charge>,
         Option<&Buffs>,
         Option<&Flying>,
     )>,
 ) {
-    for (u, mover, mut transform, selector, flow, mut charge, buffs, flying) in &mut movers {
+    for (u, mover, mut transform, skill, mut charge, buffs, flying) in &mut movers {
         // 禁移动（眩晕/缠绕）：实时查询 buff 标志位，无派生缓存；
         // 被控期间冲锋蓄力清零
         if buffs.map(|b| b.channels().cannot_move).unwrap_or(false) {
@@ -33,10 +32,10 @@ pub fn moving(
         }
         // 前摇锁移动（站定出手，CR 正统）：蓄力也暂停，
         // 后摇可移动（走A），冷却段照常追击
-        if matches!(flow.state, SkillState::Windup { .. }) {
+        if matches!(skill.flow.state, SkillState::Windup { .. }) {
             continue;
         }
-        let Some(target_entity) = selector.target else {
+        let Some(target_entity) = skill.select.target else {
             continue;
         };
         // 点查表 O(1)（替代旧的 O(n) 线性 find）
@@ -46,11 +45,11 @@ pub fn moving(
         let target = &snaps.snaps[i as usize];
         let pos = transform.translation;
         let edge = edge_dist(pos, u.radius, target.pos, target.radius);
-        if edge <= selector.range + 0.05 {
+        if edge <= skill.select.range + 0.05 {
             continue; // 射程内：attacking 负责，原地输出
         }
         // 攻击停止距离（中心距）= 攻击边缘距离 + 双方半径
-        let stop_dist = selector.range + u.radius + target.radius;
+        let stop_dist = skill.select.range + u.radius + target.radius;
         let goal = steering_goal(pos, target.pos, flying.is_some());
         let mut to_goal = goal - pos;
         to_goal.y = 0.0;
@@ -128,18 +127,7 @@ mod tests {
         let world = app.world_mut();
         world.spawn((
             Unit::tower(Faction::Enemy, 1.0),
-            super::super::guard_selector(6.0),
-            AttackFlow {
-                interval: 1.0,
-                windup_secs: 0.35,
-                state: SkillState::Idle {
-                    left: initial_cooldown_ticks(1.0, 0.35),
-                },
-            },
-            Skill {
-                payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                delivery: Delivery::Homing,
-            },
+            super::super::tower_skill(),
             Health::new(60000.0),
             Transform::from_xyz(0.0, 0.0, 12.5),
         ));
@@ -182,18 +170,7 @@ mod tests {
         let target = world
             .spawn((
                 Unit::tower(Faction::Enemy, 1.0),
-                super::super::guard_selector(6.0),
-                AttackFlow {
-                    interval: 1.0,
-                    windup_secs: 0.35,
-                    state: SkillState::Idle {
-                        left: initial_cooldown_ticks(1.0, 0.35),
-                    },
-                },
-                Skill {
-                    payload: Payload::damage_only(TOWER_ATTACK_DAMAGE, 0.0, true, false),
-                    delivery: Delivery::Homing,
-                },
+                super::super::tower_skill(),
                 Health::new(60000.0),
                 // 与怪隔河且不在桥道：地面单位要先绕桥，空军应直线
                 Transform::from_xyz(0.0, 0.0, 8.5),
